@@ -31,3 +31,12 @@ name: Settings Real-Debrid key
     id: "settings-save"
 - assertVisible:
     id: "settings-rd-qr"
+- assertVisible:
+    id: "settings-version"
+- scrollUntilVisible:
+    element:
+      id: "settings-check-update"
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: "settings-about"

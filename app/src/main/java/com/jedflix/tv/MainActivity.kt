@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
                         settingsStore = app.settingsStore,
                         cometClient = app.cometClient,
                         playbackSession = app.playbackSession,
+                        appUpdateManager = app.appUpdateManager,
                     )
                 }
             }
