@@ -84,4 +84,6 @@ dependencies {
     implementation(libs.androidx.media3.ui)
 
     implementation(libs.zxing.core)
+
+    testImplementation(libs.junit)
 }

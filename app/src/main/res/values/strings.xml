@@ -22,6 +22,28 @@
     <string name="settings_rd_qr_new">New QR</string>
     <string name="settings_rd_qr_cd">QR code for entering the Real-Debrid API key from your phone</string>
 
+    <string name="settings_about_heading">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_update_checking">Checking for updates…</string>
+    <string name="settings_update_current">You\'re up to date.</string>
+    <string name="settings_update_available">Version %1$s is available</string>
+    <string name="settings_update_check_failed">Couldn\'t check for updates. Try again.</string>
+    <string name="settings_update_check">Check for updates</string>
+    <string name="settings_update_install">Download and install</string>
+    <string name="settings_update_no_apk">This release has no APK. Scan the QR on your phone to download it.</string>
+    <string name="settings_update_downloading">Downloading… %1$d%%</string>
+    <string name="settings_update_downloading_unknown">Downloading…</string>
+    <string name="settings_update_installing">Opening the installer. Confirm with OK on the remote.</string>
+    <string name="settings_update_needs_permission">Allow JedFlix to install unknown apps, then try again.</string>
+    <string name="settings_update_allow_installs">Allow installs</string>
+    <string name="settings_update_failed">Couldn\'t download or install the update.</string>
+    <string name="settings_update_retry">Retry</string>
+    <string name="settings_update_later">Later</string>
+    <string name="settings_update_prompt_title">Update available</string>
+    <string name="settings_update_prompt_body">JedFlix %1$s is ready to install on this TV.</string>
+    <string name="settings_update_qr_cd">QR code for the GitHub release page</string>
+    <string name="settings_update_qr_hint">Or scan this on your phone to download the APK.</string>
+
     <string name="action_play">Play</string>
     <string name="action_my_list">My List</string>
     <string name="action_retry">Retry</string>

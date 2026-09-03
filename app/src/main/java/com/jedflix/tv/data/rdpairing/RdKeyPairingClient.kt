@@ -1,5 +1,6 @@
 package com.jedflix.tv.data.rdpairing
 
+import com.jedflix.tv.jedflixUserAgent
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -33,7 +34,7 @@ class RdKeyPairingClient(
         .readTimeout(35, TimeUnit.SECONDS)
         .callTimeout(40, TimeUnit.SECONDS)
         .addInterceptor { chain ->
-            chain.proceed(chain.request().newBuilder().header("User-Agent", USER_AGENT).build())
+            chain.proceed(chain.request().newBuilder().header("User-Agent", jedflixUserAgent()).build())
         }
         .build()
 
@@ -72,10 +73,6 @@ class RdKeyPairingClient(
     }
 
     private fun urlFor(code: String) = "${apiBase.trimEnd('/')}/$code".toHttpUrl()
-
-    private companion object {
-        const val USER_AGENT = "JedFlix-TV/0.1"
-    }
 }
 
 sealed interface RdKeyPollResult {
