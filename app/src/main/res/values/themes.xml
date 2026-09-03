@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Jedflix" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/jedflix_black</item>
+        <item name="android:colorBackground">@color/jedflix_black</item>
+        <item name="android:colorPrimary">@color/jedflix_red</item>
+        <item name="android:colorAccent">@color/jedflix_red</item>
+        <item name="android:statusBarColor">@color/jedflix_black</item>
+        <item name="android:navigationBarColor">@color/jedflix_black</item>
+    </style>
+</resources>

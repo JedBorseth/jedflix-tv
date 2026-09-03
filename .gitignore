@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+.kotlin/
+
+# Local config (SDK path + secrets such as TMDB_API_KEY)
+local.properties
+
+# IDE / editor
+.cursor/
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Maestro
+.maestro/tests/**/*.mp4

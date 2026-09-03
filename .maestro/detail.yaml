@@ -1,0 +1,28 @@
+appId: com.jedflix.tv
+name: Title detail smoke test
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: "poster-card"
+    timeout: 10000
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "detail"
+    timeout: 30000
+- assertVisible:
+    id: "detail"
+- assertNotVisible:
+    id: "detail-skeleton"

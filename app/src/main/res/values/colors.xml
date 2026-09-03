@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="jedflix_black">#09090B</color>
+    <color name="jedflix_red">#E50914</color>
+    <color name="jedflix_white">#FAFAF9</color>
+</resources>

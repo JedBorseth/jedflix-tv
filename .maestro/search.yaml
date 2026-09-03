@@ -1,0 +1,30 @@
+appId: com.jedflix.tv
+name: Search smoke test
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+# Catalog focus starts on a poster; LEFT opens the rail on Home, UP lands on Search.
+- pressKey: Remote Dpad Left
+- pressKey: Remote Dpad Up
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "search"
+    timeout: 10000
+- inputText: "inception"
+- extendedWaitUntil:
+    visible:
+      id: "search-results"
+    timeout: 20000
+- assertVisible:
+    id: "poster-card"

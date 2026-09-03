@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JedFlix</string>
+    <string name="wordmark">JEDFLIX</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_movies">Movies</string>
+    <string name="nav_shows">Shows</string>
+    <string name="nav_search">Search</string>
+
+    <string name="action_play">Play</string>
+    <string name="action_my_list">My List</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_browse_episodes">Browse Episodes</string>
+
+    <string name="row_cast">Cast</string>
+    <string name="row_episodes">Episodes</string>
+    <string name="row_more_like_this">More Like This</string>
+    <string name="episode_label">E%1$d  %2$s</string>
+
+    <string name="search_placeholder">Search movies and shows</string>
+    <string name="search_idle">Search movies and shows</string>
+    <string name="search_empty">No titles matched that search.</string>
+    <string name="search_error">Couldn\'t search titles</string>
+
+    <string name="error_title">Couldn\'t load titles</string>
+    <string name="error_title_detail">Couldn\'t load this title</string>
+    <string name="error_missing_key">Add TMDB_API_KEY to local.properties and rebuild.</string>
+    <string name="error_network">Check your connection and try again.</string>
+
+    <string name="cd_poster">Poster for %1$s</string>
+    <string name="cd_backdrop">Backdrop for %1$s</string>
+</resources>

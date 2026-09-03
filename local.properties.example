@@ -1,0 +1,5 @@
+# Copy to local.properties (gitignored). Android Studio fills sdk.dir automatically.
+sdk.dir=/Users/you/Library/Android/sdk
+
+# TMDB v3 API key: https://www.themoviedb.org/settings/api
+TMDB_API_KEY=

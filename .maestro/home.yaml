@@ -1,0 +1,35 @@
+appId: com.jedflix.tv
+name: Home catalog smoke test
+---
+- launchApp:
+    clearState: false
+
+# Splash plays ~2s on its own; pressing select skips it so the flow doesn't depend on timing.
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+
+# Skeleton dismisses once TMDB responds; assert real catalog content is on screen.
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- assertVisible: "Trending Now"
+- assertVisible:
+    id: "billboard"
+- assertVisible:
+    id: "poster-card"
+- assertNotVisible:
+    id: "catalog-skeleton"
+
+# Focus starts on the first Trending card (immersive row). D-pad down pins the next shelf.
+- repeat:
+    while:
+      notVisible: "Popular Movies"
+    times: 3
+    commands:
+      - pressKey: Remote Dpad Down
+- assertVisible: "Popular Movies"

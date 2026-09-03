@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV launcher banner (320x180dp): black card with a red J block. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#09090B"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#E50914"
+        android:pathData="M110,44h56v18h-17v56c0,15.5 -12.5,28 -28,28h-21v-18h21c5.5,0 10,-4.5 10,-10v-56h-21z" />
+    <!-- Underline bar echoing the web wordmark -->
+    <path
+        android:fillColor="#E50914"
+        android:pathData="M172,120h48v12h-48z" />
+    <path
+        android:fillColor="#FAFAF9"
+        android:fillAlpha="0.85"
+        android:pathData="M172,96h48v12h-48z" />
+</vector>
