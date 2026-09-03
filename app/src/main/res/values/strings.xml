@@ -14,6 +14,13 @@
     <string name="settings_rd_description">Stored on this device. It is sent to Comet (comet.elfhosted.com) only to find and resolve streams, and is never sent to JedFlix servers.</string>
     <string name="settings_rd_key_placeholder">API key</string>
     <string name="settings_save">Save</string>
+    <string name="settings_rd_qr_button">Enter from phone</string>
+    <string name="settings_rd_qr_opening">Preparing a secure code…</string>
+    <string name="settings_rd_qr_waiting">Scan this code on your phone to enter the API key.</string>
+    <string name="settings_rd_qr_error">Pairing failed. Try again.</string>
+    <string name="settings_rd_qr_expired">This code expired. Generate a new one to scan again.</string>
+    <string name="settings_rd_qr_new">New QR</string>
+    <string name="settings_rd_qr_cd">QR code for entering the Real-Debrid API key from your phone</string>
 
     <string name="action_play">Play</string>
     <string name="action_my_list">My List</string>

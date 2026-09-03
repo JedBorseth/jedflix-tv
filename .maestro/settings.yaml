@@ -29,3 +29,5 @@ name: Settings Real-Debrid key
     id: "settings-rd-key"
 - assertVisible:
     id: "settings-save"
+- assertVisible:
+    id: "settings-rd-qr"
