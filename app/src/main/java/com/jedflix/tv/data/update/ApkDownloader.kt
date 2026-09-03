@@ -19,7 +19,7 @@ class ApkDownloader(context: Context) {
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.MINUTES)
-        .callTimeout(0)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()
