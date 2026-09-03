@@ -20,7 +20,6 @@ data class GithubRelease(
     val tagName: String,
     val name: String?,
     val body: String?,
-    val htmlUrl: String,
     val apk: GithubApkAsset?,
 )
 
@@ -82,7 +81,6 @@ class GithubReleaseClient(
             tagName = tagName,
             name = name,
             body = body,
-            htmlUrl = htmlUrl,
             apk = apk?.let {
                 GithubApkAsset(
                     name = it.name,
@@ -110,7 +108,6 @@ internal data class GithubReleaseDto(
     @SerialName("tag_name") val tagName: String,
     val name: String? = null,
     val body: String? = null,
-    @SerialName("html_url") val htmlUrl: String,
     val assets: List<GithubAssetDto> = emptyList(),
 )
 

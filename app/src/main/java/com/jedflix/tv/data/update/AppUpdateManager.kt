@@ -113,7 +113,6 @@ class AppUpdateManager(
         applyRelease(
             tag = cache.tag,
             notes = cache.notes,
-            htmlUrl = cache.htmlUrl,
             apkUrl = cache.apkUrl,
             apkName = cache.apkName,
             apkSize = cache.apkSize,
@@ -149,7 +148,6 @@ class AppUpdateManager(
             store.setCachedRelease(
                 tag = release.tagName,
                 notes = notes,
-                htmlUrl = release.htmlUrl,
                 apkUrl = apk?.url.orEmpty(),
                 apkName = apk?.name.orEmpty(),
                 apkSize = apk?.size ?: 0L,
@@ -158,7 +156,6 @@ class AppUpdateManager(
             applyRelease(
                 tag = release.tagName,
                 notes = notes,
-                htmlUrl = release.htmlUrl,
                 apkUrl = apk?.url.orEmpty(),
                 apkName = apk?.name.orEmpty(),
                 apkSize = apk?.size ?: 0L,
@@ -175,7 +172,6 @@ class AppUpdateManager(
     private fun applyRelease(
         tag: String,
         notes: String,
-        htmlUrl: String,
         apkUrl: String,
         apkName: String,
         apkSize: Long,
@@ -197,7 +193,6 @@ class AppUpdateManager(
             tag = tag,
             versionLabel = VersionCompare.displayVersion(tag),
             notes = notes,
-            htmlUrl = htmlUrl,
             apkUrl = apkUrl,
             apkName = apkName,
             apkSize = apkSize,

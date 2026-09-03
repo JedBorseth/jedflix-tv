@@ -19,7 +19,6 @@ data class CachedRelease(
     val lastCheckAtMs: Long = 0L,
     val tag: String = "",
     val notes: String = "",
-    val htmlUrl: String = "",
     val apkUrl: String = "",
     val apkName: String = "",
     val apkSize: Long = 0L,
@@ -53,7 +52,6 @@ class SettingsStore(context: Context) {
             lastCheckAtMs = prefs[UPDATE_LAST_CHECK_AT] ?: 0L,
             tag = prefs[UPDATE_TAG].orEmpty(),
             notes = prefs[UPDATE_NOTES].orEmpty(),
-            htmlUrl = prefs[UPDATE_HTML_URL].orEmpty(),
             apkUrl = prefs[UPDATE_APK_URL].orEmpty(),
             apkName = prefs[UPDATE_APK_NAME].orEmpty(),
             apkSize = prefs[UPDATE_APK_SIZE] ?: 0L,
@@ -70,7 +68,6 @@ class SettingsStore(context: Context) {
     suspend fun setCachedRelease(
         tag: String,
         notes: String,
-        htmlUrl: String,
         apkUrl: String,
         apkName: String,
         apkSize: Long,
@@ -78,7 +75,6 @@ class SettingsStore(context: Context) {
         dataStore.edit { prefs ->
             prefs[UPDATE_TAG] = tag
             prefs[UPDATE_NOTES] = notes
-            prefs[UPDATE_HTML_URL] = htmlUrl
             prefs[UPDATE_APK_URL] = apkUrl
             prefs[UPDATE_APK_NAME] = apkName
             prefs[UPDATE_APK_SIZE] = apkSize
@@ -89,7 +85,6 @@ class SettingsStore(context: Context) {
         dataStore.edit { prefs ->
             prefs.remove(UPDATE_TAG)
             prefs.remove(UPDATE_NOTES)
-            prefs.remove(UPDATE_HTML_URL)
             prefs.remove(UPDATE_APK_URL)
             prefs.remove(UPDATE_APK_NAME)
             prefs.remove(UPDATE_APK_SIZE)
@@ -107,7 +102,6 @@ class SettingsStore(context: Context) {
         val UPDATE_LAST_CHECK_AT = longPreferencesKey("update_last_check_at")
         val UPDATE_TAG = stringPreferencesKey("update_tag")
         val UPDATE_NOTES = stringPreferencesKey("update_notes")
-        val UPDATE_HTML_URL = stringPreferencesKey("update_html_url")
         val UPDATE_APK_URL = stringPreferencesKey("update_apk_url")
         val UPDATE_APK_NAME = stringPreferencesKey("update_apk_name")
         val UPDATE_APK_SIZE = longPreferencesKey("update_apk_size")

@@ -4,7 +4,6 @@ data class AvailableUpdate(
     val tag: String,
     val versionLabel: String,
     val notes: String,
-    val htmlUrl: String,
     val apkUrl: String,
     val apkName: String,
     val apkSize: Long,
