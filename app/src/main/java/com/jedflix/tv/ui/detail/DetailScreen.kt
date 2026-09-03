@@ -56,6 +56,8 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.LibraryItem
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.tmdb.CastMember
 import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.MediaTitle
@@ -84,13 +86,14 @@ fun DetailScreen(
     mediaType: MediaType,
     mediaId: Int,
     repository: TmdbRepository,
+    library: UserLibraryRepository,
     onTitleClick: (MediaTitle) -> Unit,
-    onPlay: () -> Unit,
+    onPlay: (season: Int?, episode: Int?) -> Unit,
     onPlayEpisode: (season: Int, episode: Int) -> Unit,
 ) {
     val viewModel: DetailViewModel = viewModel(
         key = "${mediaType.apiValue}-$mediaId",
-        factory = DetailViewModel.Factory(mediaType, mediaId, repository),
+        factory = DetailViewModel.Factory(mediaType, mediaId, repository, library),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -109,6 +112,7 @@ fun DetailScreen(
                 onTitleClick = onTitleClick,
                 onPlay = onPlay,
                 onPlayEpisode = onPlayEpisode,
+                onToggleMyList = { viewModel.toggleMyList(current.details.title) },
             )
         }
     }
@@ -119,8 +123,9 @@ private fun DetailContent(
     state: DetailUiState.Ready,
     onSelectSeason: (Int) -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
-    onPlay: () -> Unit,
+    onPlay: (season: Int?, episode: Int?) -> Unit,
     onPlayEpisode: (season: Int, episode: Int) -> Unit,
+    onToggleMyList: () -> Unit,
 ) {
     val details = state.details
     val playFocus = remember { FocusRequester() }
@@ -140,8 +145,11 @@ private fun DetailContent(
             item(key = "hero") {
                 DetailHero(
                     details = details,
+                    inMyList = state.inMyList,
+                    resume = state.resume,
                     playFocusRequester = playFocus,
                     onPlay = onPlay,
+                    onToggleMyList = onToggleMyList,
                     onBrowseEpisodes = {
                         runCatching { episodesFocus.requestFocus() }
                     },
@@ -186,8 +194,11 @@ private fun DetailContent(
 @Composable
 private fun DetailHero(
     details: TitleDetails,
+    inMyList: Boolean,
+    resume: LibraryItem?,
     playFocusRequester: FocusRequester,
-    onPlay: () -> Unit,
+    onPlay: (season: Int?, episode: Int?) -> Unit,
+    onToggleMyList: () -> Unit,
     onBrowseEpisodes: () -> Unit,
 ) {
     val title = details.title
@@ -245,27 +256,44 @@ private fun DetailHero(
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (title.mediaType == MediaType.TV) {
+                    if (resume != null) {
+                        ActionButton(
+                            label = stringResource(R.string.action_resume),
+                            icon = JedflixIcons.Play,
+                            filled = true,
+                            modifier = Modifier.focusRequester(playFocusRequester).testTag("detail-play"),
+                            onClick = { onPlay(resume.season, resume.episode) },
+                        )
+                    }
                     ActionButton(
                         label = stringResource(R.string.action_browse_episodes),
                         icon = JedflixIcons.Play,
-                        filled = true,
-                        modifier = Modifier.focusRequester(playFocusRequester),
+                        filled = resume == null,
+                        modifier = if (resume == null) {
+                            Modifier.focusRequester(playFocusRequester)
+                        } else {
+                            Modifier
+                        },
                         onClick = onBrowseEpisodes,
                     )
                 } else {
                     ActionButton(
-                        label = stringResource(R.string.action_play),
+                        label = stringResource(
+                            if (resume != null) R.string.action_resume else R.string.action_play,
+                        ),
                         icon = JedflixIcons.Play,
                         filled = true,
                         modifier = Modifier.focusRequester(playFocusRequester).testTag("detail-play"),
-                        onClick = onPlay,
+                        onClick = { onPlay(null, null) },
                     )
                 }
                 ActionButton(
-                    label = stringResource(R.string.action_my_list),
-                    icon = JedflixIcons.Add,
+                    label = stringResource(
+                        if (inMyList) R.string.action_my_list_remove else R.string.action_my_list,
+                    ),
+                    icon = if (inMyList) JedflixIcons.Check else JedflixIcons.Add,
                     filled = false,
-                    onClick = {},
+                    onClick = onToggleMyList,
                 )
             }
         }

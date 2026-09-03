@@ -1,11 +1,15 @@
 package com.jedflix.tv.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -24,6 +28,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.tmdb.MediaTitle
+import com.jedflix.tv.ui.theme.JedflixRed
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc800
 
@@ -35,6 +40,7 @@ private val PosterShape = RoundedCornerShape(6.dp)
 fun PosterCard(
     title: MediaTitle,
     modifier: Modifier = Modifier,
+    progress: Float? = null,
     onFocused: (() -> Unit)? = null,
     onClick: () -> Unit = {},
 ) {
@@ -60,17 +66,35 @@ fun PosterCard(
             focusedGlow = Glow(elevationColor = Color.White.copy(alpha = 0.35f), elevation = 14.dp),
         ),
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(title.posterUrl)
-                .crossfade(true)
-                .build(),
-            contentDescription = stringResource(R.string.cd_poster, title.title),
-            contentScale = ContentScale.Crop,
-            placeholder = placeholder,
-            error = placeholder,
-            fallback = placeholder,
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(title.posterUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = stringResource(R.string.cd_poster, title.title),
+                contentScale = ContentScale.Crop,
+                placeholder = placeholder,
+                error = placeholder,
+                fallback = placeholder,
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (progress != null && progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color.Black.copy(alpha = 0.55f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress.coerceIn(0.04f, 1f))
+                            .height(4.dp)
+                            .background(JedflixRed),
+                    )
+                }
+            }
+        }
     }
 }

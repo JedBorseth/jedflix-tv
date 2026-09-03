@@ -15,6 +15,7 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 | Search   | Debounced as you type                                      |
 | Title    | Detail, cast, similar, TV episodes                         |
 | Play     | Title → stream picker → Comet cached RD links → Media3     |
+| Library  | Local profiles, My List, continue watching, search recents |
 | Settings | Real-Debrid key on-device (type or QR from phone)          |
 
 
@@ -25,8 +26,6 @@ The RD key stays in DataStore on the TV. It is sent only to [Comet](https://come
 - Subtitles
 - More settings
 - Alternate debrid providers (resell TorBox in-app)
-- Account switching
-- Watch history
 - Actor pages
 - More
 

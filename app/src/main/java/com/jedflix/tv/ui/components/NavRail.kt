@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +26,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.DrawerValue
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ModalNavigationDrawer
@@ -32,7 +36,11 @@ import androidx.tv.material3.NavigationDrawerItemDefaults
 import androidx.tv.material3.NavigationDrawerScope
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.tmdb.CatalogSection
+import com.jedflix.tv.ui.profile.ProfileAvatarButton
+import com.jedflix.tv.ui.profile.ProfileOverlayHost
+import com.jedflix.tv.ui.profile.ProfileViewModel
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.JedflixRed
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -51,8 +59,14 @@ fun JedflixDrawer(
     onSelect: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
+    library: UserLibraryRepository,
+    profileFocusRequester: FocusRequester? = null,
     content: @Composable () -> Unit,
 ) {
+    val profileViewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.Factory(library))
+    val profileState by profileViewModel.state.collectAsStateWithLifecycle()
+    val avatarFocus = profileFocusRequester ?: remember { FocusRequester() }
+
     ModalNavigationDrawer(
         drawerContent = { drawerValue ->
             JedflixNavRail(
@@ -70,7 +84,29 @@ fun JedflixDrawer(
             0.45f to Zinc950.copy(alpha = 0.8f),
             1f to Zinc950.copy(alpha = 0.55f),
         ),
-        content = content,
+        content = {
+            Box(modifier = Modifier.fillMaxSize()) {
+                content()
+                ProfileAvatarButton(
+                    profile = profileState.active,
+                    onClick = profileViewModel::openPicker,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 20.dp, end = 28.dp)
+                        .focusRequester(avatarFocus),
+                )
+                ProfileOverlayHost(
+                    state = profileState,
+                    onSwitch = profileViewModel::switchTo,
+                    onAdd = profileViewModel::openCreate,
+                    onEdit = profileViewModel::openEdit,
+                    onClose = profileViewModel::close,
+                    onBackToPicker = profileViewModel::backToPicker,
+                    onSave = profileViewModel::save,
+                    onDelete = profileViewModel::delete,
+                )
+            }
+        },
     )
 }
 

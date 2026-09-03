@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -106,8 +107,11 @@ fun BillboardBackdrop(title: MediaTitle?, modifier: Modifier = Modifier) {
 fun BillboardInfo(
     title: MediaTitle,
     modifier: Modifier = Modifier,
+    inMyList: Boolean = false,
     playFocusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
     onPlay: () -> Unit = {},
+    onMyList: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -148,15 +152,26 @@ fun BillboardInfo(
                 containerColor = WarmWhite,
                 contentColor = Zinc950,
                 testTag = "billboard-play",
-                modifier = playFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
+                modifier = Modifier
+                    .then(playFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                    .then(
+                        if (upFocusRequester != null) {
+                            Modifier.focusProperties { up = upFocusRequester }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 onClick = onPlay,
             )
             BillboardButton(
-                label = stringResource(R.string.action_my_list),
-                icon = JedflixIcons.Add,
+                label = stringResource(
+                    if (inMyList) R.string.action_my_list_remove else R.string.action_my_list,
+                ),
+                icon = if (inMyList) JedflixIcons.Check else JedflixIcons.Add,
                 containerColor = Color.White.copy(alpha = 0.22f),
                 contentColor = WarmWhite,
                 testTag = "billboard-my-list",
+                onClick = onMyList,
             )
         }
     }

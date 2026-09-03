@@ -13,9 +13,12 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.jedflix.tv.R
+import com.jedflix.tv.data.library.LibraryRows
 import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -26,15 +29,22 @@ val ContentStartPadding = 48.dp
 fun CatalogRowView(
     row: CatalogRow,
     modifier: Modifier = Modifier,
+    progressFor: ((MediaTitle) -> Float?)? = null,
     onItemFocused: ((MediaTitle) -> Unit)? = null,
     onItemClick: ((MediaTitle) -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     /** Where D-pad up should go from this row (e.g. the billboard's Play button). */
     upFocusRequester: FocusRequester? = null,
 ) {
+    val heading = when (row.id) {
+        LibraryRows.CONTINUE_WATCHING -> stringResource(R.string.row_continue_watching)
+        LibraryRows.MY_LIST -> stringResource(R.string.row_my_list)
+        LibraryRows.WATCH_HISTORY -> stringResource(R.string.row_watch_history)
+        else -> row.title
+    }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = row.title,
+            text = heading,
             style = MaterialTheme.typography.titleMedium,
             color = WarmWhite,
             modifier = Modifier.padding(start = ContentStartPadding),
@@ -58,6 +68,7 @@ fun CatalogRowView(
                 val requester = if (index == 0) firstItemFocusRequester else null
                 PosterCard(
                     title = item,
+                    progress = if (row.showProgress) progressFor?.invoke(item) else null,
                     modifier = if (requester != null) Modifier.focusRequester(requester) else Modifier,
                     onFocused = onItemFocused?.let { callback -> { callback(item) } },
                     onClick = { onItemClick?.invoke(item) },

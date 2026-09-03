@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -34,7 +35,16 @@ class SettingsStore(context: Context) {
         }
     }
 
+    val activeProfileId: Flow<Long?> = dataStore.data.map { prefs ->
+        prefs[ACTIVE_PROFILE_ID]
+    }
+
+    suspend fun setActiveProfileId(id: Long) {
+        dataStore.edit { prefs -> prefs[ACTIVE_PROFILE_ID] = id }
+    }
+
     private companion object {
         val REAL_DEBRID_API_KEY = stringPreferencesKey("real_debrid_api_key")
+        val ACTIVE_PROFILE_ID = longPreferencesKey("active_profile_id")
     }
 }

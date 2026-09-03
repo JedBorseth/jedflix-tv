@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.jedflix.tv.data.comet.CometClient
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.CatalogSection
@@ -30,6 +31,7 @@ fun JedflixNavHost(
     settingsStore: SettingsStore,
     cometClient: CometClient,
     playbackSession: PlaybackSession,
+    library: UserLibraryRepository,
 ) {
     val navController = rememberNavController()
 
@@ -86,12 +88,16 @@ fun JedflixNavHost(
                 CatalogScreen(
                     section = section,
                     repository = repository,
+                    library = library,
                     onSectionSelected = { target ->
                         if (target != section) openSection(target)
                     },
                     onSearch = ::openSearch,
                     onSettings = ::openSettings,
                     onTitleClick = ::openTitle,
+                    onContinueWatching = { item ->
+                        openStreams(item.title.mediaType, item.title.id, item.season, item.episode)
+                    },
                 )
             }
         }
@@ -99,6 +105,7 @@ fun JedflixNavHost(
         composable(Routes.SEARCH) {
             SearchScreen(
                 repository = repository,
+                library = library,
                 onSectionSelected = ::openSection,
                 onSettings = ::openSettings,
                 onTitleClick = ::openTitle,
@@ -108,6 +115,7 @@ fun JedflixNavHost(
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 settingsStore = settingsStore,
+                library = library,
                 onSectionSelected = ::openSection,
                 onSearch = ::openSearch,
             )
@@ -126,8 +134,9 @@ fun JedflixNavHost(
                 mediaType = type,
                 mediaId = id,
                 repository = repository,
+                library = library,
                 onTitleClick = ::openTitle,
-                onPlay = { openStreams(type, id) },
+                onPlay = { season, episode -> openStreams(type, id, season, episode) },
                 onPlayEpisode = { season, episode -> openStreams(type, id, season, episode) },
             )
         }
@@ -154,6 +163,7 @@ fun JedflixNavHost(
                 cometClient = cometClient,
                 settingsStore = settingsStore,
                 playbackSession = playbackSession,
+                library = library,
                 onPlay = { navController.navigate(Routes.PLAYER) },
                 onOpenSettings = ::openSettings,
                 onBack = { navController.popBackStack() },
@@ -167,6 +177,7 @@ fun JedflixNavHost(
         ) {
             PlayerScreen(
                 playbackSession = playbackSession,
+                library = library,
                 onExit = { navController.popBackStack() },
             )
         }

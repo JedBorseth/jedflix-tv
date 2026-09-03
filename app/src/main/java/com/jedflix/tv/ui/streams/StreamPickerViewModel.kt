@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.comet.StreamOption
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
@@ -33,6 +34,7 @@ class StreamPickerViewModel(
     private val cometClient: CometClient,
     private val settingsStore: SettingsStore,
     private val playbackSession: PlaybackSession,
+    private val library: UserLibraryRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<StreamPickerUiState>(StreamPickerUiState.Loading(null))
@@ -57,11 +59,29 @@ class StreamPickerViewModel(
         resolveJob = viewModelScope.launch {
             try {
                 val url = cometClient.resolvePlaybackUrl(option.playbackUrl)
+                val startPositionMs = library.playbackPosition(
+                    mediaType,
+                    mediaId,
+                    current.target.season,
+                    current.target.episode,
+                )
+                val title = current.target.title
                 playbackSession.start(
                     PlaybackItem(
                         streamUrl = url,
-                        title = current.target.title.title,
+                        title = title.title,
                         subtitle = current.target.subtitle,
+                        mediaType = title.mediaType,
+                        tmdbId = title.id,
+                        season = current.target.season,
+                        episode = current.target.episode,
+                        overview = title.overview,
+                        posterUrl = title.posterUrl,
+                        backdropUrl = title.backdropUrl,
+                        year = title.year,
+                        rating = title.rating,
+                        genres = title.genres,
+                        startPositionMs = startPositionMs,
                     ),
                 )
                 _state.value = current.copy(resolving = null, resolveError = null)
@@ -133,11 +153,12 @@ class StreamPickerViewModel(
         private val cometClient: CometClient,
         private val settingsStore: SettingsStore,
         private val playbackSession: PlaybackSession,
+        private val library: UserLibraryRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
             StreamPickerViewModel(
-                mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession,
+                mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession, library,
             ) as T
     }
 }

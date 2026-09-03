@@ -54,6 +54,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.ui.components.ContentStartPadding
@@ -70,6 +71,7 @@ import com.jedflix.tv.ui.theme.Zinc950
 @Composable
 fun SettingsScreen(
     settingsStore: SettingsStore,
+    library: UserLibraryRepository,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
 ) {
@@ -99,6 +101,7 @@ fun SettingsScreen(
         onSelect = onSectionSelected,
         onSearch = onSearch,
         onSettings = {},
+        library = library,
     ) {
         Column(
             modifier = Modifier

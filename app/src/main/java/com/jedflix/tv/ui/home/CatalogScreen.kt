@@ -44,6 +44,9 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.LibraryItem
+import com.jedflix.tv.data.library.LibraryRows
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
@@ -65,16 +68,19 @@ private const val ROW_PIVOT = 0.16f
 fun CatalogScreen(
     section: CatalogSection,
     repository: TmdbRepository,
+    library: UserLibraryRepository,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
+    onContinueWatching: (LibraryItem) -> Unit,
 ) {
     val viewModel: CatalogViewModel = viewModel(
         key = section.name,
-        factory = CatalogViewModel.Factory(section, repository),
+        factory = CatalogViewModel.Factory(section, repository, library),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val profileFocus = remember { FocusRequester() }
 
     JedflixDrawer(
         selected = section,
@@ -82,6 +88,8 @@ fun CatalogScreen(
         onSelect = onSectionSelected,
         onSearch = onSearch,
         onSettings = onSettings,
+        library = library,
+        profileFocusRequester = profileFocus,
     ) {
         Crossfade(
             targetState = state,
@@ -94,7 +102,12 @@ fun CatalogScreen(
                 is CatalogUiState.Error -> CatalogError(kind = current.kind, onRetry = viewModel::retry)
                 is CatalogUiState.Ready -> CatalogContent(
                     catalog = current.catalog,
+                    myListKeys = current.myListKeys,
+                    continueWatching = current.continueWatching,
+                    profileFocus = profileFocus,
                     onTitleClick = onTitleClick,
+                    onContinueWatching = onContinueWatching,
+                    onToggleMyList = viewModel::toggleMyList,
                 )
             }
         }
@@ -111,7 +124,12 @@ private object NoAutoScrollSpec : BringIntoViewSpec {
 @Composable
 private fun CatalogContent(
     catalog: Catalog,
+    myListKeys: Set<String>,
+    continueWatching: List<LibraryItem>,
+    profileFocus: FocusRequester,
     onTitleClick: (MediaTitle) -> Unit,
+    onContinueWatching: (LibraryItem) -> Unit,
+    onToggleMyList: (MediaTitle) -> Unit,
 ) {
     val fallbackHero = catalog.featured.firstOrNull() ?: catalog.rows.first().items.first()
     var hero: MediaTitle by remember(catalog) { mutableStateOf(fallbackHero) }
@@ -121,6 +139,7 @@ private fun CatalogContent(
     val playFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val rowScrollSpec = LocalBringIntoViewSpec.current
+    val continueByKey = remember(continueWatching) { continueWatching.associateBy { it.title.key } }
 
     LaunchedEffect(catalog) {
         runCatching { firstCardFocus.requestFocus() }
@@ -159,20 +178,33 @@ private fun CatalogContent(
                 item(key = "billboard") {
                     BillboardInfo(
                         title = hero,
+                        inMyList = hero.key in myListKeys,
                         playFocusRequester = playFocus,
+                        upFocusRequester = profileFocus,
                         onPlay = { onTitleClick(hero) },
+                        onMyList = { onToggleMyList(hero) },
                     )
                 }
                 itemsIndexed(catalog.rows, key = { _, row -> row.id }) { index, row ->
                     CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
                         CatalogRowView(
                             row = row,
+                            progressFor = { title -> continueByKey[title.key]?.progress },
                             onItemFocused = { focused ->
                                 focusedRow = index
-                                backdrop = focused
-                                if (index == 0) hero = focused
+                                if (row.drivesHero) {
+                                    hero = focused
+                                    backdrop = focused
+                                }
                             },
-                            onItemClick = onTitleClick,
+                            onItemClick = { title ->
+                                if (row.id == LibraryRows.CONTINUE_WATCHING) {
+                                    continueByKey[title.key]?.let(onContinueWatching)
+                                        ?: onTitleClick(title)
+                                } else {
+                                    onTitleClick(title)
+                                }
+                            },
                             firstItemFocusRequester = if (index == 0) firstCardFocus else null,
                             upFocusRequester = if (index == 0) playFocus else null,
                         )

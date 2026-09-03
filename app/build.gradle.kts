@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 // TMDB_API_KEY lives in local.properties (gitignored) or the environment, never in source.
@@ -84,4 +85,7 @@ dependencies {
     implementation(libs.androidx.media3.ui)
 
     implementation(libs.zxing.core)
+
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
 }

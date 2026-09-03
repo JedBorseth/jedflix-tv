@@ -1,5 +1,6 @@
 package com.jedflix.tv.ui.detail
 
+import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.tmdb.TitleDetails
 import com.jedflix.tv.data.tmdb.TvEpisode
 import com.jedflix.tv.ui.home.ErrorKind
@@ -12,5 +13,7 @@ sealed interface DetailUiState {
         val selectedSeason: Int?,
         val episodes: List<TvEpisode>,
         val episodesLoading: Boolean,
+        val inMyList: Boolean = false,
+        val resume: LibraryItem? = null,
     ) : DetailUiState
 }

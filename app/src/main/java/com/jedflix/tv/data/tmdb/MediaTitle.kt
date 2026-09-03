@@ -28,6 +28,10 @@ data class CatalogRow(
     val id: String,
     val title: String,
     val items: List<MediaTitle>,
+    /** When true, focusing a poster in this row updates the billboard hero. */
+    val drivesHero: Boolean = false,
+    /** Draw a playback bar on each poster (continue watching). */
+    val showProgress: Boolean = false,
 )
 
 data class Catalog(

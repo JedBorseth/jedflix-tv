@@ -50,6 +50,7 @@ import androidx.tv.material3.Text
 import com.jedflix.tv.R
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.comet.StreamOption
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaType
@@ -78,6 +79,7 @@ fun StreamPickerScreen(
     cometClient: CometClient,
     settingsStore: SettingsStore,
     playbackSession: PlaybackSession,
+    library: UserLibraryRepository,
     onPlay: () -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit,
@@ -85,7 +87,7 @@ fun StreamPickerScreen(
     val viewModel: StreamPickerViewModel = viewModel(
         key = "streams-${mediaType.apiValue}-$mediaId-$season-$episode",
         factory = StreamPickerViewModel.Factory(
-            mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession,
+            mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession, library,
         ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()

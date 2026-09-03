@@ -7,6 +7,9 @@ import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.jedflix.tv.data.comet.CometClient
+import com.jedflix.tv.data.library.RoomUserLibraryRepository
+import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.local.JedflixDatabase
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.TmdbClient
@@ -19,6 +22,10 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
     val settingsStore: SettingsStore by lazy { SettingsStore(this) }
     val cometClient: CometClient by lazy { CometClient() }
     val playbackSession: PlaybackSession by lazy { PlaybackSession() }
+    val database: JedflixDatabase by lazy { JedflixDatabase.create(this) }
+    val userLibrary: UserLibraryRepository by lazy {
+        RoomUserLibraryRepository(database, settingsStore)
+    }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)

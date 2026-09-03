@@ -23,10 +23,15 @@
     <string name="settings_rd_qr_cd">QR code for entering the Real-Debrid API key from your phone</string>
 
     <string name="action_play">Play</string>
+    <string name="action_resume">Resume</string>
     <string name="action_my_list">My List</string>
+    <string name="action_my_list_remove">Remove</string>
     <string name="action_retry">Retry</string>
     <string name="action_browse_episodes">Browse Episodes</string>
 
+    <string name="row_continue_watching">Continue Watching</string>
+    <string name="row_my_list">My List</string>
+    <string name="row_watch_history">Watch History</string>
     <string name="row_cast">Cast</string>
     <string name="row_episodes">Episodes</string>
     <string name="row_more_like_this">More Like This</string>
@@ -34,8 +39,21 @@
 
     <string name="search_placeholder">Search movies and shows</string>
     <string name="search_idle">Search movies and shows</string>
+    <string name="search_recent">Recently searched</string>
     <string name="search_empty">No titles matched that search.</string>
     <string name="search_error">Couldn\'t search titles</string>
+
+    <string name="profile_cd">Profile %1$s</string>
+    <string name="profile_who">Who\'s watching?</string>
+    <string name="profile_add">Add profile</string>
+    <string name="profile_edit">Edit profile</string>
+    <string name="profile_create_title">New profile</string>
+    <string name="profile_name_placeholder">Name</string>
+    <string name="profile_picture">Profile color</string>
+    <string name="profile_save">Save</string>
+    <string name="profile_cancel">Cancel</string>
+    <string name="profile_delete">Delete</string>
+    <string name="profile_done">Done</string>
 
     <string name="error_title">Couldn\'t load titles</string>
     <string name="error_title_detail">Couldn\'t load this title</string>

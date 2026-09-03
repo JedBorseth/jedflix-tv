@@ -52,6 +52,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc300
@@ -61,6 +62,7 @@ import com.jedflix.tv.ui.theme.Zinc950
 @Composable
 fun PlayerScreen(
     playbackSession: PlaybackSession,
+    library: UserLibraryRepository,
     onExit: () -> Unit,
 ) {
     val item = remember { playbackSession.current }
@@ -73,7 +75,7 @@ fun PlayerScreen(
     val context = LocalContext.current
     val viewModel: PlayerViewModel = viewModel(
         key = "player-${item.streamUrl.hashCode()}",
-        factory = PlayerViewModel.Factory(context, item),
+        factory = PlayerViewModel.Factory(context, item, library),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }

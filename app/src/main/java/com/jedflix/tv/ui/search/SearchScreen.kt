@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -39,10 +42,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
@@ -64,11 +70,12 @@ import com.jedflix.tv.ui.theme.Zinc950
 @Composable
 fun SearchScreen(
     repository: TmdbRepository,
+    library: UserLibraryRepository,
     onSectionSelected: (CatalogSection) -> Unit,
     onSettings: () -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
 ) {
-    val viewModel: SearchViewModel = viewModel(factory = SearchViewModel.Factory(repository))
+    val viewModel: SearchViewModel = viewModel(factory = SearchViewModel.Factory(repository, library))
     val query by viewModel.query.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val fieldFocus = remember { FocusRequester() }
@@ -83,6 +90,7 @@ fun SearchScreen(
         onSelect = onSectionSelected,
         onSearch = {},
         onSettings = onSettings,
+        library = library,
     ) {
         Column(
             modifier = Modifier
@@ -105,9 +113,12 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxSize(),
             ) { current ->
                 when (current) {
-                    SearchUiState.Idle -> SearchMessage(stringResource(R.string.search_idle))
                     SearchUiState.Loading -> SearchSkeleton()
                     SearchUiState.Empty -> SearchMessage(stringResource(R.string.search_empty))
+                    is SearchUiState.Idle -> SearchIdle(
+                        recents = current.recents,
+                        onRecentClick = viewModel::onQueryChange,
+                    )
                     is SearchUiState.Error -> SearchError(kind = current.kind)
                     is SearchUiState.Results -> SearchResults(
                         titles = current.titles,
@@ -201,6 +212,45 @@ private fun SearchSkeleton() {
             ) {
                 repeat(8) {
                     SkeletonBlock(brush, width = PosterWidth, height = PosterHeight, radius = 6.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchIdle(
+    recents: List<String>,
+    onRecentClick: (String) -> Unit,
+) {
+    if (recents.isEmpty()) {
+        SearchMessage(stringResource(R.string.search_idle))
+        return
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = ContentStartPadding, end = 48.dp, top = 8.dp)
+            .testTag("search-recents"),
+    ) {
+        Text(
+            text = stringResource(R.string.search_recent),
+            style = MaterialTheme.typography.titleMedium,
+            color = WarmWhite,
+        )
+        Spacer(Modifier.height(12.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(recents, key = { it }) { recent ->
+                Button(
+                    onClick = { onRecentClick(recent) },
+                    colors = ButtonDefaults.colors(
+                        containerColor = Zinc800,
+                        contentColor = WarmWhite,
+                        focusedContainerColor = WarmWhite,
+                        focusedContentColor = Zinc950,
+                    ),
+                ) {
+                    Text(recent, fontWeight = FontWeight.Medium)
                 }
             }
         }
