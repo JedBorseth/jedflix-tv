@@ -47,8 +47,10 @@ val RailCollapsedWidth = 80.dp
 fun JedflixDrawer(
     selected: CatalogSection?,
     searchSelected: Boolean,
+    settingsSelected: Boolean = false,
     onSelect: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onSettings: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     ModalNavigationDrawer(
@@ -57,8 +59,10 @@ fun JedflixDrawer(
                 drawerValue = drawerValue,
                 selected = selected,
                 searchSelected = searchSelected,
+                settingsSelected = settingsSelected,
                 onSelect = onSelect,
                 onSearch = onSearch,
+                onSettings = onSettings,
             )
         },
         scrimBrush = Brush.horizontalGradient(
@@ -76,12 +80,15 @@ fun NavigationDrawerScope.JedflixNavRail(
     drawerValue: DrawerValue,
     selected: CatalogSection?,
     searchSelected: Boolean,
+    settingsSelected: Boolean,
     onSelect: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sectionFocus = remember { CatalogSection.entries.associateWith { FocusRequester() } }
     val searchFocus = remember { FocusRequester() }
+    val settingsFocus = remember { FocusRequester() }
 
     Column(
         modifier = modifier
@@ -90,10 +97,10 @@ fun NavigationDrawerScope.JedflixNavRail(
             .testTag("nav-rail")
             .focusProperties {
                 onEnter = {
-                    if (searchSelected) {
-                        searchFocus.requestFocus()
-                    } else {
-                        selected?.let { sectionFocus.getValue(it).requestFocus() }
+                    when {
+                        searchSelected -> searchFocus.requestFocus()
+                        settingsSelected -> settingsFocus.requestFocus()
+                        else -> selected?.let { sectionFocus.getValue(it).requestFocus() }
                     }
                 }
             }
@@ -146,6 +153,17 @@ fun NavigationDrawerScope.JedflixNavRail(
             onClick = { onSelect(CatalogSection.SHOWS) },
             testTag = "nav-shows",
             modifier = Modifier.focusRequester(sectionFocus.getValue(CatalogSection.SHOWS)),
+        )
+
+        Spacer(Modifier.weight(1f))
+
+        RailItem(
+            icon = JedflixIcons.Settings,
+            label = stringResource(R.string.nav_settings),
+            selected = settingsSelected,
+            onClick = onSettings,
+            testTag = "nav-settings",
+            modifier = Modifier.focusRequester(settingsFocus),
         )
     }
 }

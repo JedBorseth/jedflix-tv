@@ -67,6 +67,7 @@ fun CatalogScreen(
     repository: TmdbRepository,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onSettings: () -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
 ) {
     val viewModel: CatalogViewModel = viewModel(
@@ -80,6 +81,7 @@ fun CatalogScreen(
         searchSelected = false,
         onSelect = onSectionSelected,
         onSearch = onSearch,
+        onSettings = onSettings,
     ) {
         Crossfade(
             targetState = state,

@@ -29,7 +29,12 @@ class MainActivity : ComponentActivity() {
                         .semantics { testTagsAsResourceId = true },
                     colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background),
                 ) {
-                    JedflixNavHost(repository = app.tmdbRepository)
+                    JedflixNavHost(
+                        repository = app.tmdbRepository,
+                        settingsStore = app.settingsStore,
+                        cometClient = app.cometClient,
+                        playbackSession = app.playbackSession,
+                    )
                 }
             }
         }

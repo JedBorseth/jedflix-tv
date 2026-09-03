@@ -1,0 +1,31 @@
+appId: com.jedflix.tv
+name: Settings Real-Debrid key
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+# Catalog focus starts on a poster; LEFT opens the rail on Home, then down to Settings.
+- pressKey: Remote Dpad Left
+- pressKey: Remote Dpad Down
+- pressKey: Remote Dpad Down
+- pressKey: Remote Dpad Down
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "settings"
+    timeout: 10000
+- inputText: "rd-test-key-123"
+- hideKeyboard
+- assertVisible:
+    id: "settings-rd-key"
+- assertVisible:
+    id: "settings-save"

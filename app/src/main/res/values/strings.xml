@@ -7,6 +7,13 @@
     <string name="nav_movies">Movies</string>
     <string name="nav_shows">Shows</string>
     <string name="nav_search">Search</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_rd_heading">Real-Debrid</string>
+    <string name="settings_rd_description">Stored on this device. It is sent to Comet (comet.elfhosted.com) only to find and resolve streams, and is never sent to JedFlix servers.</string>
+    <string name="settings_rd_key_placeholder">API key</string>
+    <string name="settings_save">Save</string>
 
     <string name="action_play">Play</string>
     <string name="action_my_list">My List</string>
@@ -27,6 +34,28 @@
     <string name="error_title_detail">Couldn\'t load this title</string>
     <string name="error_missing_key">Add TMDB_API_KEY to local.properties and rebuild.</string>
     <string name="error_network">Check your connection and try again.</string>
+
+    <string name="streams_heading">Select a stream</string>
+    <string name="streams_source">Comet  •  Real-Debrid</string>
+    <string name="streams_loading">Finding cached streams…</string>
+    <string name="streams_resolving">Resolving with Real-Debrid…</string>
+    <string name="streams_cached">Cached</string>
+    <string name="streams_error_missing_key_title">Add your Real-Debrid key</string>
+    <string name="streams_error_missing_key">JedFlix needs a Real-Debrid API key to resolve streams. Add it in Settings.</string>
+    <string name="streams_error_no_imdb_title">Can\'t look up this title</string>
+    <string name="streams_error_no_imdb">TMDB has no IMDb id for this title, so no streams can be found.</string>
+    <string name="streams_error_empty_title">No cached streams</string>
+    <string name="streams_error_empty">Nothing for this title is cached on Real-Debrid yet. Try again later.</string>
+    <string name="streams_error_debrid_title">Real-Debrid rejected the request</string>
+    <string name="streams_error_debrid">Check that your API key is valid and your account is premium.</string>
+    <string name="streams_error_network_title">Couldn\'t load streams</string>
+    <string name="streams_error_resolve">Couldn\'t resolve that stream. Try another one.</string>
+    <string name="action_open_settings">Open Settings</string>
+    <string name="action_cancel">Cancel</string>
+
+    <string name="player_error_title">Playback failed</string>
+    <string name="player_error">The stream couldn\'t be played. Go back and pick another one.</string>
+    <string name="action_back">Back</string>
 
     <string name="cd_poster">Poster for %1$s</string>
     <string name="cd_backdrop">Backdrop for %1$s</string>

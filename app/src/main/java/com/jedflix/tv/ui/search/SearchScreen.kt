@@ -65,6 +65,7 @@ import com.jedflix.tv.ui.theme.Zinc950
 fun SearchScreen(
     repository: TmdbRepository,
     onSectionSelected: (CatalogSection) -> Unit,
+    onSettings: () -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
 ) {
     val viewModel: SearchViewModel = viewModel(factory = SearchViewModel.Factory(repository))
@@ -81,6 +82,7 @@ fun SearchScreen(
         searchSelected = true,
         onSelect = onSectionSelected,
         onSearch = {},
+        onSettings = onSettings,
     ) {
         Column(
             modifier = Modifier

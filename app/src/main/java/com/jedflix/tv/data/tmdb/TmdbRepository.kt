@@ -26,9 +26,9 @@ class TmdbRepository(private val api: TmdbApi) {
         if (!force) detailsCache[key]?.let { return it }
         val details = withContext(Dispatchers.IO) {
             val append = if (type == MediaType.MOVIE) {
-                "credits,recommendations"
+                "credits,recommendations,external_ids"
             } else {
-                "aggregate_credits,recommendations"
+                "aggregate_credits,recommendations,external_ids"
             }
             val dto = api.details(type.apiValue, id, append)
             dto.toTitleDetails(type) ?: throw IllegalStateException("Title not found")

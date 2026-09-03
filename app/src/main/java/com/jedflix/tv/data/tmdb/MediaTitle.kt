@@ -59,6 +59,8 @@ data class TvEpisode(
 
 data class TitleDetails(
     val title: MediaTitle,
+    /** IMDb id (`tt…`) used to look up streams; null when TMDB has no mapping. */
+    val imdbId: String?,
     val runtimeMinutes: Int?,
     val cast: List<CastMember>,
     val similar: List<MediaTitle>,
@@ -116,6 +118,7 @@ fun TmdbDetailsDto.toTitleDetails(type: MediaType): TitleDetails? {
     }
     return TitleDetails(
         title = media,
+        imdbId = externalIds?.imdbId?.takeIf { it.startsWith("tt") },
         runtimeMinutes = runtime,
         cast = credits
             .sortedBy { it.order }

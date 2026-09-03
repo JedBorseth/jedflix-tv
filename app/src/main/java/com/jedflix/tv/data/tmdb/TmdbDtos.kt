@@ -60,8 +60,14 @@ data class TmdbSeasonSummaryDto(
 )
 
 @Serializable
+data class TmdbExternalIdsDto(
+    @SerialName("imdb_id") val imdbId: String? = null,
+)
+
+@Serializable
 data class TmdbDetailsDto(
     val id: Int,
+    @SerialName("external_ids") val externalIds: TmdbExternalIdsDto? = null,
     val title: String? = null,
     val name: String? = null,
     val overview: String? = null,

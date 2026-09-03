@@ -85,6 +85,8 @@ fun DetailScreen(
     mediaId: Int,
     repository: TmdbRepository,
     onTitleClick: (MediaTitle) -> Unit,
+    onPlay: () -> Unit,
+    onPlayEpisode: (season: Int, episode: Int) -> Unit,
 ) {
     val viewModel: DetailViewModel = viewModel(
         key = "${mediaType.apiValue}-$mediaId",
@@ -105,6 +107,8 @@ fun DetailScreen(
                 state = current,
                 onSelectSeason = viewModel::selectSeason,
                 onTitleClick = onTitleClick,
+                onPlay = onPlay,
+                onPlayEpisode = onPlayEpisode,
             )
         }
     }
@@ -115,6 +119,8 @@ private fun DetailContent(
     state: DetailUiState.Ready,
     onSelectSeason: (Int) -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
+    onPlay: () -> Unit,
+    onPlayEpisode: (season: Int, episode: Int) -> Unit,
 ) {
     val details = state.details
     val playFocus = remember { FocusRequester() }
@@ -135,6 +141,7 @@ private fun DetailContent(
                 DetailHero(
                     details = details,
                     playFocusRequester = playFocus,
+                    onPlay = onPlay,
                     onBrowseEpisodes = {
                         runCatching { episodesFocus.requestFocus() }
                     },
@@ -154,6 +161,9 @@ private fun DetailContent(
                         loading = state.episodesLoading,
                         firstEpisodeFocus = episodesFocus,
                         onSelectSeason = onSelectSeason,
+                        onPlayEpisode = { episode ->
+                            state.selectedSeason?.let { season -> onPlayEpisode(season, episode.episodeNumber) }
+                        },
                     )
                 }
             }
@@ -177,6 +187,7 @@ private fun DetailContent(
 private fun DetailHero(
     details: TitleDetails,
     playFocusRequester: FocusRequester,
+    onPlay: () -> Unit,
     onBrowseEpisodes: () -> Unit,
 ) {
     val title = details.title
@@ -246,8 +257,8 @@ private fun DetailHero(
                         label = stringResource(R.string.action_play),
                         icon = JedflixIcons.Play,
                         filled = true,
-                        modifier = Modifier.focusRequester(playFocusRequester),
-                        onClick = {},
+                        modifier = Modifier.focusRequester(playFocusRequester).testTag("detail-play"),
+                        onClick = onPlay,
                     )
                 }
                 ActionButton(
@@ -366,6 +377,7 @@ private fun EpisodeSection(
     loading: Boolean,
     firstEpisodeFocus: FocusRequester,
     onSelectSeason: (Int) -> Unit,
+    onPlayEpisode: (TvEpisode) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -412,6 +424,7 @@ private fun EpisodeSection(
                     EpisodeCard(
                         episode = episode,
                         modifier = if (index == 0) Modifier.focusRequester(firstEpisodeFocus) else Modifier,
+                        onClick = { onPlayEpisode(episode) },
                     )
                 }
             }
@@ -420,11 +433,11 @@ private fun EpisodeSection(
 }
 
 @Composable
-private fun EpisodeCard(episode: TvEpisode, modifier: Modifier = Modifier) {
+private fun EpisodeCard(episode: TvEpisode, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(6.dp)
     Column(modifier = modifier.width(220.dp)) {
         Surface(
-            onClick = {},
+            onClick = onClick,
             modifier = Modifier
                 .width(220.dp)
                 .height(124.dp)
