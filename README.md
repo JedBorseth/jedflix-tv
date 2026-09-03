@@ -1,47 +1,45 @@
 # JedFlix TV
 
-Android TV client for [JedFlix](https://github.com/JedBorseth/jedflix). Kotlin, Jetpack Compose for TV
-(`androidx.tv:tv-material`), Coil, Retrofit + kotlinx.serialization, Maestro.
+Android TV / Google TV client for [JedFlix](https://github.com/JedBorseth/jedflix). **Beta 0.1.0** (`com.jedflix.tv`).
 
-Phase 1 is browse only: a Netflix-style home with a launch animation, nav rail (Home / Movies / Shows),
-immersive billboard and TMDB poster rows. Playback, details, auth and My List come later and will talk to
-the existing JedFlix Go backend.
+Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playback through Comet + Real-Debrid.
 
-## Setup
+<p>
+  <img src="docs/home.png" alt="Home catalog" width="32%" />
+  <img src="docs/detail.png" alt="Title detail" width="32%" />
+  <img src="docs/settings.png" alt="Real-Debrid settings" width="32%" />
+</p>
 
-1. Copy `local.properties.example` to `local.properties`, set `sdk.dir` and your TMDB v3 key:
+**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.1.0)** · Leanback, API 24+ · sideload only (not on Play Store)
 
-   ```properties
-   sdk.dir=/Users/you/Library/Android/sdk
-   TMDB_API_KEY=your_key_here
-   ```
+| | |
+|---|---|
+| Browse | Home / Movies / Shows, immersive billboard, poster shelves |
+| Search | Debounced as you type |
+| Title | Detail, cast, similar, TV episodes |
+| Play | Title → stream picker → Comet cached RD links → Media3 |
+| Settings | Real-Debrid key on-device (type or QR from phone) |
 
-   `local.properties` is gitignored; the key is injected as `BuildConfig.TMDB_API_KEY`.
+The RD key stays in DataStore on the TV. It is sent only to [Comet](https://comet.elfhosted.com) to find/unrestrict streams — never to Convex or JedFlix web.
 
-2. Build and install on an Android TV device/emulator (API 24+):
+Not in this beta: accounts, My List, watch history, non-cached torrents.
 
-   ```bash
-   ./gradlew :app:installDebug
-   ```
+## Install
 
-## Maestro
+1. Get a [Real-Debrid](https://real-debrid.com) premium key.
+2. Install the APK (`adb install jedflix-tv-0.1.0-beta.apk`, or copy onto the TV).
+3. Settings → paste the key, or **Enter from phone** and scan the QR.
 
-With a TV emulator running (e.g. the `GoogleTV_1080p` AVD):
+## Build
+
+```properties
+# local.properties (gitignored)
+sdk.dir=/Users/you/Library/Android/sdk
+TMDB_API_KEY=your_tmdb_v3_key
+```
 
 ```bash
-maestro test .maestro/home.yaml
+./gradlew :app:installDebug
 ```
 
-## Layout
-
-```
-app/src/main/java/com/jedflix/tv/
-  JedflixTvApp.kt        # Application: Coil image loader, TMDB client/repository
-  MainActivity.kt
-  data/tmdb/             # Retrofit API, DTOs, mapper, shelves, repository
-  ui/theme/              # TV Material dark theme, inline icons
-  ui/splash/             # JEDFLIX wordmark launch animation
-  ui/navigation/         # NavHost: splash -> catalog sections
-  ui/home/               # CatalogScreen, CatalogViewModel, CatalogUiState
-  ui/components/         # NavRail, Billboard, CatalogRow, PosterCard, CatalogSkeletons
-```
+Maestro (with e.g. `GoogleTV_1080p` running): `maestro test .maestro/home.yaml`
