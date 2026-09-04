@@ -17,6 +17,7 @@ media3 = "1.11.0"
 zxing = "3.5.3"
 ksp = "2.3.11"
 room = "2.8.4"
+junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -50,6 +51,7 @@ androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplaye
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }

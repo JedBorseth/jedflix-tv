@@ -57,6 +57,7 @@ import com.jedflix.tv.R
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.CatalogSection
+import com.jedflix.tv.data.update.AppUpdateManager
 import com.jedflix.tv.ui.components.ContentStartPadding
 import com.jedflix.tv.ui.components.JedflixDrawer
 import com.jedflix.tv.ui.components.RailCollapsedWidth
@@ -72,11 +73,13 @@ import com.jedflix.tv.ui.theme.Zinc950
 fun SettingsScreen(
     settingsStore: SettingsStore,
     library: UserLibraryRepository,
+    appUpdateManager: AppUpdateManager,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(settingsStore))
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val updateState by appUpdateManager.state.collectAsStateWithLifecycle()
     val fieldFocus = remember { FocusRequester() }
     val qrActionFocus = remember { FocusRequester() }
 
@@ -121,6 +124,13 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.displayMedium,
                     color = WarmWhite,
                     fontWeight = FontWeight.Black,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.settings_version, updateState.currentVersion),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Zinc400,
+                    modifier = Modifier.testTag("settings-version"),
                 )
                 Spacer(Modifier.height(36.dp))
                 Text(
@@ -169,6 +179,14 @@ fun SettingsScreen(
                         onCancel = viewModel::cancelQrPairing,
                     )
                 }
+                Spacer(Modifier.height(48.dp))
+                AboutUpdateSection(
+                    state = updateState,
+                    onCheck = { appUpdateManager.check(force = true) },
+                    onInstall = appUpdateManager::downloadAndInstall,
+                    onAllowInstalls = appUpdateManager::requestUnknownSourcesPermission,
+                    onCancelInstall = appUpdateManager::cancelInstall,
+                )
             }
         }
     }
