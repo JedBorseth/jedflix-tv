@@ -1,7 +1,9 @@
 package com.jedflix.tv.ui.settings
 
-import androidx.activity.compose.BackHandler
+import android.graphics.drawable.ColorDrawable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,16 +16,24 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
@@ -45,100 +55,131 @@ fun UpdatePromptOverlay(
     onLater: () -> Unit,
 ) {
     val available = state.available ?: return
-    val actionFocus = remember { FocusRequester() }
-    LaunchedEffect(state.install) {
-        runCatching { actionFocus.requestFocus() }
-    }
-
     val busy = state.install is InstallProgress.Downloading ||
         state.install is InstallProgress.Installing
-    BackHandler(enabled = true) {
-        if (busy) onCancel() else onLater()
-    }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Zinc950.copy(alpha = 0.82f))
-            .testTag("update-prompt"),
-        contentAlignment = Alignment.Center,
+    Dialog(
+        onDismissRequest = { if (busy) onCancel() else onLater() },
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
-        Column(
-            modifier = Modifier.widthIn(max = 640.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_update_prompt_title),
-                style = MaterialTheme.typography.headlineMedium,
-                color = WarmWhite,
-                fontWeight = FontWeight.Black,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = promptBody(state, available.versionLabel),
-                style = MaterialTheme.typography.bodyLarge,
-                color = Zinc400,
-            )
-            val downloading = state.install as? InstallProgress.Downloading
-            if (downloading != null) {
-                Spacer(Modifier.height(20.dp))
-                DownloadProgressBar(bytesRead = downloading.bytesRead, totalBytes = downloading.totalBytes)
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.apply {
+                setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                setDimAmount(0f)
             }
-            Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                when (state.install) {
-                    InstallProgress.Idle -> {
-                        if (available.apkUrl.isNotBlank()) {
+        }
+
+        val actionFocus = remember { FocusRequester() }
+        LaunchedEffect(state.install) {
+            withFrameNanos { }
+            runCatching { actionFocus.requestFocus() }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Zinc950.copy(alpha = 0.82f))
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
+                    }
+                }
+                .focusGroup()
+                .focusProperties {
+                    onExit = { cancelFocusChange() }
+                }
+                .testTag("update-prompt"),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = 640.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_update_prompt_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = WarmWhite,
+                    fontWeight = FontWeight.Black,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = promptBody(state, available.versionLabel),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Zinc400,
+                )
+                val downloading = state.install as? InstallProgress.Downloading
+                if (downloading != null) {
+                    Spacer(Modifier.height(20.dp))
+                    DownloadProgressBar(bytesRead = downloading.bytesRead, totalBytes = downloading.totalBytes)
+                }
+                Spacer(Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (state.install) {
+                        InstallProgress.Idle -> {
+                            if (available.apkUrl.isNotBlank()) {
+                                Button(
+                                    onClick = onInstall,
+                                    modifier = Modifier
+                                        .focusRequester(actionFocus)
+                                        .testTag("update-prompt-install"),
+                                ) {
+                                    Text(stringResource(R.string.settings_update_install))
+                                }
+                            }
+                            PromptSecondary(
+                                label = stringResource(R.string.settings_update_later),
+                                modifier = if (available.apkUrl.isBlank()) Modifier.focusRequester(actionFocus) else Modifier,
+                                onClick = onLater,
+                            )
+                        }
+                        InstallProgress.NeedsUnknownSources -> {
+                            Button(
+                                onClick = onAllowInstalls,
+                                modifier = Modifier
+                                    .focusRequester(actionFocus)
+                                    .testTag("update-prompt-allow"),
+                            ) {
+                                Text(stringResource(R.string.settings_update_allow_installs))
+                            }
+                            PromptSecondary(
+                                label = stringResource(R.string.settings_update_later),
+                                onClick = onLater,
+                            )
+                        }
+                        is InstallProgress.Downloading -> {
+                            PromptSecondary(
+                                label = stringResource(R.string.action_cancel),
+                                modifier = Modifier.focusRequester(actionFocus),
+                                onClick = onCancel,
+                            )
+                        }
+                        InstallProgress.Installing -> {
+                            Box(
+                                modifier = Modifier
+                                    .focusRequester(actionFocus)
+                                    .focusable(),
+                            )
+                        }
+                        InstallProgress.Failed -> {
                             Button(
                                 onClick = onInstall,
                                 modifier = Modifier
                                     .focusRequester(actionFocus)
-                                    .testTag("update-prompt-install"),
+                                    .testTag("update-prompt-retry"),
                             ) {
-                                Text(stringResource(R.string.settings_update_install))
+                                Text(stringResource(R.string.settings_update_retry))
                             }
+                            PromptSecondary(
+                                label = stringResource(R.string.settings_update_later),
+                                onClick = onLater,
+                            )
                         }
-                        PromptSecondary(
-                            label = stringResource(R.string.settings_update_later),
-                            modifier = if (available.apkUrl.isBlank()) Modifier.focusRequester(actionFocus) else Modifier,
-                            onClick = onLater,
-                        )
-                    }
-                    InstallProgress.NeedsUnknownSources -> {
-                        Button(
-                            onClick = onAllowInstalls,
-                            modifier = Modifier
-                                .focusRequester(actionFocus)
-                                .testTag("update-prompt-allow"),
-                        ) {
-                            Text(stringResource(R.string.settings_update_allow_installs))
-                        }
-                        PromptSecondary(
-                            label = stringResource(R.string.settings_update_later),
-                            onClick = onLater,
-                        )
-                    }
-                    is InstallProgress.Downloading -> {
-                        PromptSecondary(
-                            label = stringResource(R.string.action_cancel),
-                            modifier = Modifier.focusRequester(actionFocus),
-                            onClick = onCancel,
-                        )
-                    }
-                    InstallProgress.Installing -> Unit
-                    InstallProgress.Failed -> {
-                        Button(
-                            onClick = onInstall,
-                            modifier = Modifier
-                                .focusRequester(actionFocus)
-                                .testTag("update-prompt-retry"),
-                        ) {
-                            Text(stringResource(R.string.settings_update_retry))
-                        }
-                        PromptSecondary(
-                            label = stringResource(R.string.settings_update_later),
-                            onClick = onLater,
-                        )
                     }
                 }
             }
