@@ -57,6 +57,7 @@ import com.jedflix.tv.ui.components.JedflixDrawer
 import com.jedflix.tv.ui.components.PosterCard
 import com.jedflix.tv.ui.components.PosterHeight
 import com.jedflix.tv.ui.components.PosterWidth
+import com.jedflix.tv.ui.components.ProfileAvatarEndClearance
 import com.jedflix.tv.ui.components.RailCollapsedWidth
 import com.jedflix.tv.ui.components.SkeletonBlock
 import com.jedflix.tv.ui.components.rememberShimmerBrush
@@ -103,7 +104,7 @@ fun SearchScreen(
                 query = query,
                 onQueryChange = viewModel::onQueryChange,
                 modifier = Modifier
-                    .padding(start = ContentStartPadding, end = 48.dp, top = 28.dp, bottom = 16.dp)
+                    .padding(start = ContentStartPadding, end = ProfileAvatarEndClearance, top = 28.dp, bottom = 16.dp)
                     .focusRequester(fieldFocus),
             )
             Crossfade(

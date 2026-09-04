@@ -2,8 +2,12 @@ package com.jedflix.tv.ui.detail
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,19 +24,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -80,6 +91,7 @@ import com.jedflix.tv.ui.theme.Zinc400
 import com.jedflix.tv.ui.theme.Zinc800
 import com.jedflix.tv.ui.theme.Zinc950
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @Composable
 fun DetailScreen(
@@ -97,27 +109,49 @@ fun DetailScreen(
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    val crossfadeKey = when (state) {
+        DetailUiState.Loading -> "loading"
+        is DetailUiState.Error -> "error"
+        is DetailUiState.Ready -> "ready"
+    }
     Crossfade(
-        targetState = state,
+        targetState = crossfadeKey,
         animationSpec = tween(350),
         label = "detail-state",
         modifier = Modifier.fillMaxSize().background(Zinc950),
-    ) { current ->
-        when (current) {
-            DetailUiState.Loading -> DetailSkeleton()
-            is DetailUiState.Error -> DetailError(kind = current.kind, onRetry = viewModel::retry)
-            is DetailUiState.Ready -> DetailContent(
-                state = current,
-                onSelectSeason = viewModel::selectSeason,
-                onTitleClick = onTitleClick,
-                onPlay = onPlay,
-                onPlayEpisode = onPlayEpisode,
-                onToggleMyList = { viewModel.toggleMyList(current.details.title) },
-            )
+    ) { key ->
+        when (key) {
+            "loading" -> DetailSkeleton()
+            "error" -> {
+                val error = state as? DetailUiState.Error
+                if (error != null) {
+                    DetailError(kind = error.kind, onRetry = viewModel::retry)
+                }
+            }
+            else -> {
+                val ready = state as? DetailUiState.Ready
+                if (ready != null) {
+                    DetailContent(
+                        state = ready,
+                        onSelectSeason = viewModel::selectSeason,
+                        onTitleClick = onTitleClick,
+                        onPlay = onPlay,
+                        onPlayEpisode = onPlayEpisode,
+                        onToggleMyList = { viewModel.toggleMyList(ready.details.title) },
+                    )
+                }
+            }
         }
     }
 }
 
+/** Vertical scroll is driven by which section has focus, so focus itself must not scroll the column. */
+@OptIn(ExperimentalFoundationApi::class)
+private object NoAutoScrollSpec : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = 0f
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DetailContent(
     state: DetailUiState.Ready,
@@ -130,61 +164,110 @@ private fun DetailContent(
     val details = state.details
     val playFocus = remember { FocusRequester() }
     val episodesFocus = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val rowScrollSpec = LocalBringIntoViewSpec.current
+    val pinSpace = LocalConfiguration.current.screenHeightDp.dp * 0.62f
+    var focusedSection by remember(details.title.key) { mutableIntStateOf(0) }
+    val hasCast = details.cast.isNotEmpty()
+    val hasEpisodes = details.seasons.isNotEmpty()
+    val castIndex = 1
+    val episodesIndex = 1 + if (hasCast) 1 else 0
+    val similarIndex = 1 + (if (hasCast) 1 else 0) + (if (hasEpisodes) 1 else 0)
 
     LaunchedEffect(details.title.key) {
+        focusedSection = 0
         runCatching { playFocus.requestFocus() }
+    }
+
+    LaunchedEffect(focusedSection) {
+        if (focusedSection == 0) {
+            listState.animateScrollToItem(0)
+        } else {
+            listState.animateScrollToItem(focusedSection)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().testTag("detail")) {
         BillboardBackdrop(title = details.title)
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            item(key = "hero") {
-                DetailHero(
-                    details = details,
-                    inMyList = state.inMyList,
-                    resume = state.resume,
-                    playFocusRequester = playFocus,
-                    onPlay = onPlay,
-                    onToggleMyList = onToggleMyList,
-                    onBrowseEpisodes = {
-                        runCatching { episodesFocus.requestFocus() }
-                    },
-                )
-            }
-            if (details.cast.isNotEmpty()) {
-                item(key = "cast") {
-                    CastRow(cast = details.cast)
-                }
-            }
-            if (details.seasons.isNotEmpty()) {
-                item(key = "episodes") {
-                    EpisodeSection(
-                        seasons = details.seasons,
-                        selectedSeason = state.selectedSeason,
-                        episodes = state.episodes,
-                        loading = state.episodesLoading,
-                        firstEpisodeFocus = episodesFocus,
-                        onSelectSeason = onSelectSeason,
-                        onPlayEpisode = { episode ->
-                            state.selectedSeason?.let { season -> onPlayEpisode(season, episode.episodeNumber) }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides NoAutoScrollSpec) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                item(key = "hero") {
+                    DetailHero(
+                        details = details,
+                        inMyList = state.inMyList,
+                        resume = state.resume,
+                        playFocusRequester = playFocus,
+                        onPlay = onPlay,
+                        onToggleMyList = onToggleMyList,
+                        onBrowseEpisodes = {
+                            focusedSection = episodesIndex
+                            scope.launch {
+                                listState.animateScrollToItem(episodesIndex)
+                                runCatching { episodesFocus.requestFocus() }
+                            }
                         },
+                        modifier = Modifier
+                            .focusGroup()
+                            .onFocusChanged { if (it.hasFocus) focusedSection = 0 },
                     )
                 }
-            }
-            if (details.similar.isNotEmpty()) {
-                item(key = "similar") {
-                    CatalogRowView(
-                        row = CatalogRow(
-                            id = "similar",
-                            title = stringResource(R.string.row_more_like_this),
-                            items = details.similar,
-                        ),
-                        onItemClick = onTitleClick,
-                    )
+                if (hasCast) {
+                    item(key = "cast") {
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
+                            CastRow(
+                                cast = details.cast,
+                                modifier = Modifier
+                                    .focusGroup()
+                                    .onFocusChanged { if (it.hasFocus) focusedSection = castIndex },
+                            )
+                        }
+                    }
+                }
+                if (hasEpisodes) {
+                    item(key = "episodes") {
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
+                            EpisodeSection(
+                                seasons = details.seasons,
+                                selectedSeason = state.selectedSeason,
+                                episodes = state.episodes,
+                                loading = state.episodesLoading,
+                                firstEpisodeFocus = episodesFocus,
+                                onSelectSeason = onSelectSeason,
+                                onPlayEpisode = { episode ->
+                                    state.selectedSeason?.let { season -> onPlayEpisode(season, episode.episodeNumber) }
+                                },
+                                modifier = Modifier
+                                    .focusGroup()
+                                    .onFocusChanged { if (it.hasFocus) focusedSection = episodesIndex },
+                            )
+                        }
+                    }
+                }
+                if (details.similar.isNotEmpty()) {
+                    item(key = "similar") {
+                        CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
+                            CatalogRowView(
+                                row = CatalogRow(
+                                    id = "similar",
+                                    title = stringResource(R.string.row_more_like_this),
+                                    items = details.similar,
+                                ),
+                                modifier = Modifier
+                                    .focusGroup()
+                                    .onFocusChanged { if (it.hasFocus) focusedSection = similarIndex },
+                                onItemClick = onTitleClick,
+                            )
+                        }
+                    }
+                }
+                item(key = "end-space") {
+                    Spacer(Modifier.height(pinSpace))
                 }
             }
         }
@@ -200,10 +283,11 @@ private fun DetailHero(
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onToggleMyList: () -> Unit,
     onBrowseEpisodes: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val title = details.title
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(start = ContentStartPadding, end = 48.dp, top = 36.dp),
         horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -325,8 +409,8 @@ private fun ActionButton(
 }
 
 @Composable
-private fun CastRow(cast: List<CastMember>) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun CastRow(cast: List<CastMember>, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = stringResource(R.string.row_cast),
             style = MaterialTheme.typography.titleMedium,
@@ -406,8 +490,9 @@ private fun EpisodeSection(
     firstEpisodeFocus: FocusRequester,
     onSelectSeason: (Int) -> Unit,
     onPlayEpisode: (TvEpisode) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = stringResource(R.string.row_episodes),
             style = MaterialTheme.typography.titleMedium,
@@ -445,7 +530,7 @@ private fun EpisodeSection(
             }
         } else {
             LazyRow(
-                contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp, top = 8.dp, bottom = 8.dp),
+                contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp, top = 12.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 itemsIndexed(episodes, key = { _, ep -> ep.episodeNumber }) { index, episode ->

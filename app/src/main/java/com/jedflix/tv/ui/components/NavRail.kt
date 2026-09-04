@@ -51,6 +51,9 @@ import com.jedflix.tv.ui.theme.Zinc950
 /** Horizontal space the collapsed rail occupies; catalog content starts after it. */
 val RailCollapsedWidth = 80.dp
 
+/** End inset so page chrome clears the top-end profile avatar (48.dp + padding + focus scale). */
+val ProfileAvatarEndClearance = 104.dp
+
 @Composable
 fun JedflixDrawer(
     selected: CatalogSection?,
