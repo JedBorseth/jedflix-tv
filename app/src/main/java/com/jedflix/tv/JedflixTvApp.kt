@@ -14,8 +14,17 @@ import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.TmdbClient
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.data.update.ApkDownloader
+import com.jedflix.tv.data.update.ApkInstaller
+import com.jedflix.tv.data.update.AppUpdateManager
+import com.jedflix.tv.data.update.GithubReleaseClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class JedflixTvApp : Application(), SingletonImageLoader.Factory {
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val tmdbClient: TmdbClient by lazy { TmdbClient(BuildConfig.TMDB_API_KEY, BuildConfig.DEBUG) }
     val tmdbRepository: TmdbRepository by lazy { TmdbRepository(tmdbClient.api) }
@@ -25,6 +34,21 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
     val database: JedflixDatabase by lazy { JedflixDatabase.create(this) }
     val userLibrary: UserLibraryRepository by lazy {
         RoomUserLibraryRepository(database, settingsStore)
+    }
+    val appUpdateManager: AppUpdateManager by lazy {
+        AppUpdateManager(
+            store = settingsStore,
+            github = GithubReleaseClient(),
+            downloader = ApkDownloader(this),
+            installer = ApkInstaller(this),
+            scope = applicationScope,
+            currentVersion = BuildConfig.VERSION_NAME,
+        )
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        appUpdateManager.start()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
