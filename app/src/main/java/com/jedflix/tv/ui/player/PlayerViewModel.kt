@@ -1,3 +1,5 @@
+@file:OptIn(UnstableApi::class)
+
 package com.jedflix.tv.ui.player
 
 import android.content.Context
@@ -12,16 +14,20 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.PlaybackProgress
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.AudioFormatLabel
+import com.jedflix.tv.data.playback.AudioTrackOption
 import com.jedflix.tv.data.playback.EpisodeRef
 import com.jedflix.tv.data.playback.NextEpisode
 import com.jedflix.tv.data.playback.NextStream
 import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.PlaybackSession
+import com.jedflix.tv.data.playback.PlayerAudioSelection
 import com.jedflix.tv.data.playback.PlayerLanguages
 import com.jedflix.tv.data.playback.TextTrackLabel
 import com.jedflix.tv.data.settings.PlaybackPrefs
@@ -64,10 +70,9 @@ class PlayerViewModel(
     )
     val events: SharedFlow<PlayerEvent> = _events.asSharedFlow()
 
-    val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext)
-        .setSeekBackIncrementMs(SEEK_INCREMENT_MS)
-        .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
-        .build()
+    private val configured = createConfiguredPlayer(context)
+    val player: ExoPlayer = configured.player
+    private val trackSelector = configured.trackSelector
 
     private var didSeek = item.startPositionMs <= 0L
     private var persistJob: Job? = null
@@ -80,6 +85,7 @@ class PlayerViewModel(
     private var prefetchJob: Job? = null
     private var countdownJob: Job? = null
     private var handlingEnded = false
+    private var audioFallbackAttempted = false
 
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -119,7 +125,6 @@ class PlayerViewModel(
         prefs = runBlocking { settingsStore.playbackPrefs.first() }
         applyPrefs(prefs)
         player.addListener(listener)
-        player.setAudioAttributes(player.audioAttributes, true)
         attachItem(_state.value.item, play = true)
         persistJob = viewModelScope.launch {
             launch {
@@ -170,37 +175,34 @@ class PlayerViewModel(
     fun selectAudio(trackId: String) {
         val track = _state.value.audioTracks.firstOrNull { it.id == trackId } ?: return
         val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
-            .setPreferredAudioLanguage(PlayerLanguages.normalize(track.language) ?: prefs.audioLanguage)
-            .build()
+        applyTrackParams {
+            clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+            setPreferredAudioLanguage(PlayerLanguages.normalize(track.language) ?: prefs.audioLanguage)
+        }
         _state.value = _state.value.copy(selectedAudioId = track.id)
         viewModelScope.launch { settingsStore.setAudioLanguage(track.language.orEmpty()) }
     }
 
     fun selectText(trackId: String?) {
         if (trackId == null) {
-            player.trackSelectionParameters = player.trackSelectionParameters
-                .buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .setPreferredTextLanguage(null)
-                .build()
+            applyTrackParams {
+                clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                setPreferredTextLanguage(null)
+            }
             _state.value = _state.value.copy(selectedTextId = null)
             viewModelScope.launch { settingsStore.setCaptionsEnabled(false) }
             return
         }
         val track = _state.value.textTracks.firstOrNull { it.id == trackId } ?: return
         val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
-            .setPreferredTextLanguage(PlayerLanguages.normalize(track.language) ?: prefs.captionLanguage)
-            .build()
+        applyTrackParams {
+            setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+            setPreferredTextLanguage(PlayerLanguages.normalize(track.language) ?: prefs.captionLanguage)
+        }
         _state.value = _state.value.copy(selectedTextId = track.id)
         viewModelScope.launch { settingsStore.setCaptionLanguage(track.language ?: PlayerLanguages.ENGLISH) }
     }
@@ -251,6 +253,7 @@ class PlayerViewModel(
     private fun attachItem(item: PlaybackItem, play: Boolean) {
         didSeek = item.startPositionMs <= 0L
         handlingEnded = false
+        audioFallbackAttempted = false
         resolvedNext = null
         player.setMediaItem(
             MediaItem.Builder()
@@ -268,13 +271,20 @@ class PlayerViewModel(
     }
 
     private fun applyPrefs(prefs: PlaybackPrefs) {
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            .setPreferredAudioLanguage(prefs.audioLanguage)
-            .setPreferredTextLanguage(prefs.captionLanguage.takeIf { prefs.captionsEnabled })
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !prefs.captionsEnabled)
+        applyTrackParams {
+            clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            setPreferredAudioLanguage(prefs.audioLanguage)
+            setPreferredTextLanguage(prefs.captionLanguage.takeIf { prefs.captionsEnabled })
+            setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !prefs.captionsEnabled)
+        }
+    }
+
+    private fun applyTrackParams(mutate: DefaultTrackSelector.Parameters.Builder.() -> Unit) {
+        trackSelector.parameters = trackSelector.buildUponParameters()
+            .setExceedRendererCapabilitiesIfNecessary(false)
+            .setConstrainAudioChannelCountToDeviceCapabilities(false)
+            .apply(mutate)
             .build()
     }
 
@@ -302,16 +312,27 @@ class PlayerViewModel(
     }
 
     private fun publishTracks(tracks: Tracks) {
+        val audioOptions = mutableListOf<AudioTrackOption>()
         val audio = mutableListOf<SelectableTrack>()
         val text = mutableListOf<SelectableTrack>()
         var selectedAudio: String? = null
         var selectedText: String? = null
         tracks.groups.forEachIndexed { groupIndex, group ->
             for (index in 0 until group.length) {
-                if (!group.isTrackSupported(index)) continue
                 val format = group.getTrackFormat(index)
+                val supported = group.isTrackSupported(index)
                 when (group.type) {
                     C.TRACK_TYPE_AUDIO -> {
+                        audioOptions += AudioTrackOption(
+                            groupIndex = groupIndex,
+                            trackIndex = index,
+                            language = format.language,
+                            supported = supported,
+                            selected = group.isTrackSelected(index),
+                            channelCount = format.channelCount,
+                            isDefault = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0,
+                        )
+                        if (!supported) continue
                         val id = "a:$groupIndex:$index"
                         audio += SelectableTrack(
                             id = id,
@@ -329,6 +350,7 @@ class PlayerViewModel(
                         if (group.isTrackSelected(index)) selectedAudio = id
                     }
                     C.TRACK_TYPE_TEXT -> {
+                        if (!supported) continue
                         val id = "t:$groupIndex:$index"
                         text += SelectableTrack(
                             id = id,
@@ -341,6 +363,16 @@ class PlayerViewModel(
                     }
                 }
             }
+        }
+        val fallback = PlayerAudioSelection.pickPlayable(audioOptions, prefs.audioLanguage)
+        if (fallback != null && !fallback.selected && !audioFallbackAttempted) {
+            audioFallbackAttempted = true
+            val group = tracks.groups.getOrNull(fallback.groupIndex) ?: return
+            applyTrackParams {
+                clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, fallback.trackIndex))
+            }
+            return
         }
         _state.value = _state.value.copy(
             audioTracks = audio,
@@ -581,7 +613,6 @@ class PlayerViewModel(
     }
 
     private companion object {
-        const val SEEK_INCREMENT_MS = 10_000L
         const val PERSIST_INTERVAL_MS = 10_000L
         const val PREFETCH_REMAINING_MS = 45_000L
         const val COUNTDOWN_SECONDS = 8
