@@ -54,7 +54,7 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        runCatching { appUpdateManager.start() }
+        runCatching { ApkInstaller(this).abandonStaleSessions() }
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =

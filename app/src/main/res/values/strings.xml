@@ -33,7 +33,7 @@
     <string name="settings_update_no_apk">This release has no APK to install.</string>
     <string name="settings_update_downloading">Downloading… %1$d%%</string>
     <string name="settings_update_downloading_unknown">Downloading…</string>
-    <string name="settings_update_installing">Opening the installer. Confirm with OK on the remote.</string>
+    <string name="settings_update_installing">Opening the system installer. Confirm with OK on the remote.</string>
     <string name="settings_update_needs_permission">Allow JedFlix to install unknown apps, then try again.</string>
     <string name="settings_update_allow_installs">Allow installs</string>
     <string name="settings_update_failed">Couldn\'t download or install the update.</string>

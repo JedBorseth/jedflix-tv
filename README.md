@@ -6,7 +6,7 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 
 ![Home catalog](docs/home.png)![Real-Debrid QR pairing](docs/settings.png)![Stream picker](docs/streams.png)
 
-**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.3.3)** · Leanback, API 24+ · sideload only (not on Play Store)
+**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.3.4)** · Leanback, API 24+ · sideload only (not on Play Store)
 
 
 |          |                                                            |
@@ -31,10 +31,12 @@ The RD key stays in DataStore on the TV. It is sent only to [Comet](https://come
 ## Install
 
 1. Get a [Real-Debrid](https://real-debrid.com) premium key.
-2. Install the APK (`adb install jedflix-tv-0.3.3.apk`, or copy onto the TV).
+2. Install the APK (`adb install jedflix-tv-0.3.4.apk`, or copy onto the TV).
 3. Settings → paste the key, or **Enter from phone** and scan the QR.
 
-**0.3.2:** uninstall and sideload 0.3.3 if the app will not open (the installer trampoline could resume instead of Home). **0.2.1 and 0.3.0:** uninstall first, then sideload — those builds used throwaway debug keys. **0.3.1** can update in place.
+If **every** JedFlix APK (including 0.2.1) opens and immediately closes, the TV still has leftover installer state for `com.jedflix.tv`. Uninstall JedFlix, **reboot the TV**, then sideload 0.3.4. That clears stuck PackageInstaller sessions and a launcher resume pointing at the old update trampoline.
+
+**0.3.1** can update in place. **0.2.1 / 0.3.0 / 0.3.2:** uninstall, reboot, sideload.
 
 Later releases are offered in Settings (**Check for updates**, then **Download and install**). The app also checks GitHub once every 24 hours. Sideloaded updates only succeed when the new APK is signed with the same key as the installed build.
 

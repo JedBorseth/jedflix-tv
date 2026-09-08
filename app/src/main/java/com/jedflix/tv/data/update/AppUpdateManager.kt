@@ -249,7 +249,6 @@ class AppUpdateManager(
                         it.copy(install = InstallProgress.Failed(InstallFailureReason.SignatureMismatch))
                     }
                 }
-                InstallStart.Started -> Unit
                 InstallStart.StartedLegacy -> {
                     _state.update { it.copy(install = InstallProgress.Idle) }
                 }
