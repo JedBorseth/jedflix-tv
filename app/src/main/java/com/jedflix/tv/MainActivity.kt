@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as JedflixTvApp
+        runCatching { app.appUpdateManager.start() }
         setContent {
             JedflixTheme {
                 Surface(

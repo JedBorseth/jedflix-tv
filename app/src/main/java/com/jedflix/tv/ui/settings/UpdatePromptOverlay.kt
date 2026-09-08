@@ -40,6 +40,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
 import com.jedflix.tv.data.update.AppUpdateState
+import com.jedflix.tv.data.update.InstallFailureReason
 import com.jedflix.tv.data.update.InstallProgress
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc400
@@ -166,7 +167,7 @@ fun UpdatePromptOverlay(
                                     .focusable(),
                             )
                         }
-                        InstallProgress.Failed -> {
+                        is InstallProgress.Failed -> {
                             Button(
                                 onClick = onInstall,
                                 modifier = Modifier
@@ -223,7 +224,11 @@ internal fun promptBody(state: AppUpdateState, versionLabel: String): String {
         }
         InstallProgress.Installing -> stringResource(R.string.settings_update_installing)
         InstallProgress.NeedsUnknownSources -> stringResource(R.string.settings_update_needs_permission)
-        InstallProgress.Failed -> stringResource(R.string.settings_update_failed)
+        is InstallProgress.Failed -> when (install.reason) {
+            InstallFailureReason.SignatureMismatch ->
+                stringResource(R.string.settings_update_failed_signature)
+            InstallFailureReason.Generic -> stringResource(R.string.settings_update_failed)
+        }
         InstallProgress.Idle -> stringResource(R.string.settings_update_prompt_body, versionLabel)
     }
 }

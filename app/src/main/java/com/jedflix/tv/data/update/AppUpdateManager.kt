@@ -2,7 +2,6 @@ package com.jedflix.tv.data.update
 
 import android.content.Intent
 import android.content.pm.PackageInstaller
-import android.os.Build
 import com.jedflix.tv.data.settings.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -29,9 +28,6 @@ class AppUpdateManager(
     private val _state = MutableStateFlow(AppUpdateState(currentVersion = currentVersion))
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
 
-    private val _pendingConfirm = MutableSharedFlow<Intent>(extraBufferCapacity = 1)
-    val pendingConfirm: SharedFlow<Intent> = _pendingConfirm.asSharedFlow()
-
     private val _openUnknownSources = MutableSharedFlow<Intent>(extraBufferCapacity = 1)
     val openUnknownSources: SharedFlow<Intent> = _openUnknownSources.asSharedFlow()
 
@@ -40,8 +36,14 @@ class AppUpdateManager(
 
     fun start() {
         scope.launch {
-            hydrateFromCache()
-            check(force = false)
+            try {
+                hydrateFromCache()
+                check(force = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _state.update { it.copy(checking = false) }
+            }
         }
     }
 
@@ -53,7 +55,7 @@ class AppUpdateManager(
     fun downloadAndInstall() {
         val update = _state.value.available ?: return
         if (update.apkUrl.isBlank()) {
-            _state.update { it.copy(install = InstallProgress.Failed) }
+            _state.update { it.copy(install = InstallProgress.Failed()) }
             return
         }
         if (installJob?.isActive == true) return
@@ -90,21 +92,21 @@ class AppUpdateManager(
             PackageInstaller.EXTRA_STATUS,
             PackageInstaller.STATUS_FAILURE,
         )
-        when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = confirmIntent(intent) ?: return
-                _pendingConfirm.tryEmit(confirm)
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) return
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        when (val progress = installProgressForStatus(status, message)) {
+            InstallProgress.Idle -> {
+                if (status == PackageInstaller.STATUS_SUCCESS) {
+                    downloader.clear()
+                    _state.update { it.copy(install = InstallProgress.Idle, showLaunchPrompt = false) }
+                } else {
+                    _state.update { it.copy(install = InstallProgress.Idle) }
+                }
             }
-            PackageInstaller.STATUS_SUCCESS -> {
-                downloader.clear()
-                _state.update { it.copy(install = InstallProgress.Idle, showLaunchPrompt = false) }
+            is InstallProgress.Failed -> {
+                _state.update { it.copy(install = progress) }
             }
-            PackageInstaller.STATUS_FAILURE_ABORTED -> {
-                _state.update { it.copy(install = InstallProgress.Idle) }
-            }
-            else -> {
-                _state.update { it.copy(install = InstallProgress.Failed) }
-            }
+            else -> Unit
         }
     }
 
@@ -208,6 +210,12 @@ class AppUpdateManager(
     }
 
     private suspend fun runDownloadAndInstall(update: AvailableUpdate) {
+        if (!installer.canReplaceInstalledPackage()) {
+            _state.update {
+                it.copy(install = InstallProgress.Failed(InstallFailureReason.SignatureMismatch))
+            }
+            return
+        }
         if (!installer.canRequestInstalls()) {
             _state.update { it.copy(install = InstallProgress.NeedsUnknownSources) }
             return
@@ -236,7 +244,11 @@ class AppUpdateManager(
                 InstallStart.NeedsUnknownSources -> {
                     _state.update { it.copy(install = InstallProgress.NeedsUnknownSources) }
                 }
-                InstallStart.Started -> Unit
+                InstallStart.SignatureMismatch -> {
+                    _state.update {
+                        it.copy(install = InstallProgress.Failed(InstallFailureReason.SignatureMismatch))
+                    }
+                }
                 InstallStart.StartedLegacy -> {
                     _state.update { it.copy(install = InstallProgress.Idle) }
                 }
@@ -247,19 +259,10 @@ class AppUpdateManager(
             throw e
         } catch (_: IOException) {
             downloader.clear()
-            _state.update { it.copy(install = InstallProgress.Failed) }
+            _state.update { it.copy(install = InstallProgress.Failed()) }
         } catch (_: Exception) {
             downloader.clear()
-            _state.update { it.copy(install = InstallProgress.Failed) }
-        }
-    }
-
-    private fun confirmIntent(intent: Intent): Intent? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_INTENT)
+            _state.update { it.copy(install = InstallProgress.Failed()) }
         }
     }
 
