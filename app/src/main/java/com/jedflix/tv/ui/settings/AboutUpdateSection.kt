@@ -82,7 +82,7 @@ fun AboutUpdateSection(
                     )
                 }
                 InstallProgress.Installing -> Unit
-                InstallProgress.Failed, InstallProgress.Idle -> {
+                is InstallProgress.Failed, InstallProgress.Idle -> {
                     if (available != null && available.apkUrl.isNotBlank()) {
                         Button(
                             onClick = onInstall,

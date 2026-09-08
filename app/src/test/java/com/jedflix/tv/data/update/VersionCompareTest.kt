@@ -24,6 +24,12 @@ class VersionCompareTest {
     }
 
     @Test
+    fun publishedBrokenTagsAreNotNewerThanFix() {
+        assertFalse(VersionCompare.isNewer("0.3.4", "0.3.5"))
+        assertTrue(VersionCompare.isNewer("0.3.5", "0.3.4"))
+    }
+
+    @Test
     fun olderReleaseIsNotNewer() {
         assertFalse(VersionCompare.isNewer("0.1.0", "0.2.0"))
     }

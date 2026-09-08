@@ -14,7 +14,7 @@ sealed interface InstallProgress {
     data object NeedsUnknownSources : InstallProgress
     data class Downloading(val bytesRead: Long, val totalBytes: Long) : InstallProgress
     data object Installing : InstallProgress
-    data object Failed : InstallProgress
+    data class Failed(val reason: InstallFailureReason = InstallFailureReason.Generic) : InstallProgress
 }
 
 data class AppUpdateState(

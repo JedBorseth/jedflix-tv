@@ -38,7 +38,6 @@ import com.jedflix.tv.ui.settings.SettingsScreen
 import com.jedflix.tv.ui.settings.UpdatePromptOverlay
 import com.jedflix.tv.ui.splash.SplashScreen
 import com.jedflix.tv.ui.streams.StreamPickerScreen
-import kotlinx.coroutines.launch
 
 @Composable
 fun JedflixNavHost(
@@ -56,15 +55,8 @@ fun JedflixNavHost(
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
     LaunchedEffect(appUpdateManager) {
-        launch {
-            appUpdateManager.pendingConfirm.collect { intent ->
-                runCatching { context.startActivity(intent) }
-            }
-        }
-        launch {
-            appUpdateManager.openUnknownSources.collect { intent ->
-                runCatching { context.startActivity(intent) }
-            }
+        appUpdateManager.openUnknownSources.collect { intent ->
+            runCatching { context.startActivity(intent) }
         }
     }
 
