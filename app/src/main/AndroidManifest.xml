@@ -36,9 +36,13 @@
             </intent-filter>
         </activity>
 
-        <receiver
-            android:name=".data.update.InstallStatusReceiver"
-            android:exported="false" />
+        <activity
+            android:name=".data.update.InstallStatusActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Jedflix.Transparent" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

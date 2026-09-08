@@ -37,6 +37,7 @@
     <string name="settings_update_needs_permission">Allow JedFlix to install unknown apps, then try again.</string>
     <string name="settings_update_allow_installs">Allow installs</string>
     <string name="settings_update_failed">Couldn\'t download or install the update.</string>
+    <string name="settings_update_failed_signature">This TV still has a JedFlix build signed with a different key, so the update can\'t replace it. Uninstall JedFlix, then sideload the latest APK from GitHub.</string>
     <string name="settings_update_retry">Retry</string>
     <string name="settings_update_later">Later</string>
     <string name="settings_update_prompt_title">Update available</string>

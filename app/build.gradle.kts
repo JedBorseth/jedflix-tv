@@ -27,15 +27,28 @@ android {
         applicationId = "com.jedflix.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.1"
+        versionCode = 6
+        versionName = "0.3.2"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
     }
 
+    signingConfigs {
+        create("upload") {
+            storeFile = file("keystore/jedflix-upload.jks")
+            storePassword = "jedflix-upload"
+            keyAlias = "jedflix"
+            keyPassword = "jedflix-upload"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("upload")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("upload")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
