@@ -41,8 +41,7 @@
             android:excludeFromRecents="true"
             android:exported="true"
             android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@style/Theme.Jedflix.Transparent" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

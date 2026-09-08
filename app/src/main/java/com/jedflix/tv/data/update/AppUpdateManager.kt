@@ -36,8 +36,14 @@ class AppUpdateManager(
 
     fun start() {
         scope.launch {
-            hydrateFromCache()
-            check(force = false)
+            try {
+                hydrateFromCache()
+                check(force = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _state.update { it.copy(checking = false) }
+            }
         }
     }
 

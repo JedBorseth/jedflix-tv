@@ -1,6 +1,7 @@
 package com.jedflix.tv
 
 import android.app.Application
+import android.util.Log
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -18,13 +19,18 @@ import com.jedflix.tv.data.update.ApkDownloader
 import com.jedflix.tv.data.update.ApkInstaller
 import com.jedflix.tv.data.update.AppUpdateManager
 import com.jedflix.tv.data.update.GithubReleaseClient
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 class JedflixTvApp : Application(), SingletonImageLoader.Factory {
 
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val applicationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            Log.e("Jedflix", "Background work failed", error)
+        },
+    )
 
     val tmdbClient: TmdbClient by lazy { TmdbClient(BuildConfig.TMDB_API_KEY, BuildConfig.DEBUG) }
     val tmdbRepository: TmdbRepository by lazy { TmdbRepository(tmdbClient.api) }
@@ -48,7 +54,7 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        appUpdateManager.start()
+        runCatching { appUpdateManager.start() }
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
