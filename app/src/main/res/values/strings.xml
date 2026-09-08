@@ -100,6 +100,23 @@
 
     <string name="player_error_title">Playback failed</string>
     <string name="player_error">The stream couldn\'t be played. Go back and pick another one.</string>
+    <string name="player_rewind">-10</string>
+    <string name="player_forward">+10</string>
+    <string name="player_seek_forward">+%1$ds</string>
+    <string name="player_seek_back">-%1$ds</string>
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_captions">Captions</string>
+    <string name="player_audio">Audio</string>
+    <string name="player_next_episode">Next</string>
+    <string name="player_captions_off">Off</string>
+    <string name="player_no_captions">No captions in this file</string>
+    <string name="player_no_audio">No alternate audio tracks</string>
+    <string name="player_up_next">Up next</string>
+    <string name="player_up_next_episode">S%1$d E%2$d  •  %3$s</string>
+    <string name="player_playing_in">Playing in %1$ds</string>
+    <string name="player_finding_next">Finding next episode…</string>
+    <string name="player_play_now">Play now</string>
     <string name="action_back">Back</string>
 
     <string name="cd_poster">Poster for %1$s</string>

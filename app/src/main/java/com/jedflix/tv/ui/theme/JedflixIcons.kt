@@ -30,6 +30,32 @@ object JedflixIcons {
         )
     }
     val Play: ImageVector by lazy { icon("Play", "M8 5v14l11-7z") }
+    val Pause: ImageVector by lazy { icon("Pause", "M6 19h4V5H6v14zm8-14v14h4V5h-4z") }
+    val Replay10: ImageVector by lazy {
+        icon(
+            "Replay10",
+            "M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8zm-1.06 11h-.84v-3.26l-1.01.31v-.69l1.77-.64h.08V16zm4.17 0h-2.44V9.75h.79v5.53h1.65V16z",
+        )
+    }
+    val Forward10: ImageVector by lazy {
+        icon(
+            "Forward10",
+            "M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6v4l5-5-5-5v4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8h-2zm-7.06 3h-.84v-3.26l-1.01.31v-.69l1.77-.64h.08V16zm4.17 0h-2.44V9.75h.79v5.53h1.65V16z",
+        )
+    }
+    val ClosedCaption: ImageVector by lazy {
+        icon(
+            "ClosedCaption",
+            "M19 4H5c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1z",
+        )
+    }
+    val Audiotrack: ImageVector by lazy {
+        icon(
+            "Audiotrack",
+            "M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z",
+        )
+    }
+    val SkipNext: ImageVector by lazy { icon("SkipNext", "M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z") }
     val Add: ImageVector by lazy { icon("Add", "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z") }
     val Settings: ImageVector by lazy {
         icon(

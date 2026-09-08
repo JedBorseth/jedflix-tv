@@ -3,10 +3,12 @@ package com.jedflix.tv.data.settings
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.jedflix.tv.data.playback.PlayerLanguages
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -23,6 +25,12 @@ data class CachedRelease(
     val apkName: String = "",
     val apkSize: Long = 0L,
     val dismissedTag: String = "",
+)
+
+data class PlaybackPrefs(
+    val audioLanguage: String = PlayerLanguages.ENGLISH,
+    val captionsEnabled: Boolean = false,
+    val captionLanguage: String = PlayerLanguages.ENGLISH,
 )
 
 /**
@@ -105,9 +113,39 @@ class SettingsStore(context: Context) {
         }
     }
 
+    val playbackPrefs: Flow<PlaybackPrefs> = dataStore.data.map { prefs ->
+        PlaybackPrefs(
+            audioLanguage = prefs[AUDIO_LANGUAGE] ?: PlayerLanguages.ENGLISH,
+            captionsEnabled = prefs[CAPTIONS_ENABLED] ?: false,
+            captionLanguage = prefs[CAPTION_LANGUAGE] ?: PlayerLanguages.ENGLISH,
+        )
+    }
+
+    suspend fun setAudioLanguage(code: String) {
+        val normalized = PlayerLanguages.normalize(code) ?: return
+        if (normalized == PlayerLanguages.UNKNOWN) return
+        dataStore.edit { prefs -> prefs[AUDIO_LANGUAGE] = normalized }
+    }
+
+    suspend fun setCaptionsEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[CAPTIONS_ENABLED] = enabled }
+    }
+
+    suspend fun setCaptionLanguage(code: String) {
+        val normalized = PlayerLanguages.normalize(code) ?: return
+        if (normalized == PlayerLanguages.UNKNOWN) return
+        dataStore.edit { prefs ->
+            prefs[CAPTION_LANGUAGE] = normalized
+            prefs[CAPTIONS_ENABLED] = true
+        }
+    }
+
     private companion object {
         val REAL_DEBRID_API_KEY = stringPreferencesKey("real_debrid_api_key")
         val ACTIVE_PROFILE_ID = longPreferencesKey("active_profile_id")
+        val AUDIO_LANGUAGE = stringPreferencesKey("playback_audio_language")
+        val CAPTIONS_ENABLED = booleanPreferencesKey("playback_captions_enabled")
+        val CAPTION_LANGUAGE = stringPreferencesKey("playback_caption_language")
         val UPDATE_LAST_CHECK_AT = longPreferencesKey("update_last_check_at")
         val UPDATE_TAG = stringPreferencesKey("update_tag")
         val UPDATE_NOTES = stringPreferencesKey("update_notes")

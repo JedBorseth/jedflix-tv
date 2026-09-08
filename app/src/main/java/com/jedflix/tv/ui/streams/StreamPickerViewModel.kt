@@ -66,6 +66,7 @@ class StreamPickerViewModel(
                     current.target.episode,
                 )
                 val title = current.target.title
+                val details = repository.loadDetails(mediaType, mediaId)
                 playbackSession.start(
                     PlaybackItem(
                         streamUrl = url,
@@ -82,6 +83,8 @@ class StreamPickerViewModel(
                         rating = title.rating,
                         genres = title.genres,
                         startPositionMs = startPositionMs,
+                        imdbId = details.imdbId,
+                        resolution = option.resolution,
                     ),
                 )
                 _state.value = current.copy(resolving = null, resolveError = null)

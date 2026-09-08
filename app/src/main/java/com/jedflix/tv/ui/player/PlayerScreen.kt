@@ -1,31 +1,24 @@
 package com.jedflix.tv.ui.player
 
-import android.view.View
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -36,61 +29,124 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
-import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.Text
+import androidx.media3.ui.SubtitleView
 import com.jedflix.tv.R
+import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
-import com.jedflix.tv.ui.theme.WarmWhite
-import com.jedflix.tv.ui.theme.Zinc300
-import com.jedflix.tv.ui.theme.Zinc400
-import com.jedflix.tv.ui.theme.Zinc950
+import com.jedflix.tv.data.settings.SettingsStore
+import com.jedflix.tv.data.tmdb.TmdbRepository
+import kotlinx.coroutines.delay
+
+private enum class PlayerMenu { None, Audio, Captions }
 
 @Composable
 fun PlayerScreen(
     playbackSession: PlaybackSession,
     library: UserLibraryRepository,
+    settingsStore: SettingsStore,
+    tmdb: TmdbRepository,
+    comet: CometClient,
     onExit: () -> Unit,
+    onSeriesComplete: () -> Unit,
+    onNeedPicker: (season: Int, episode: Int) -> Unit,
 ) {
     val item = remember { playbackSession.current }
     if (item == null) {
-        // Nothing staged (e.g. process death restored this route); bounce back to the picker.
         LaunchedEffect(Unit) { onExit() }
         return
     }
 
     val context = LocalContext.current
     val viewModel: PlayerViewModel = viewModel(
-        key = "player-${item.streamUrl.hashCode()}",
-        factory = PlayerViewModel.Factory(context, item, library),
+        key = "player",
+        factory = PlayerViewModel.Factory(
+            context,
+            item,
+            library,
+            settingsStore,
+            tmdb,
+            comet,
+            playbackSession,
+        ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
-    var playerView by remember { mutableStateOf<PlayerView?>(null) }
-    val keyFocus = remember { FocusRequester() }
+    var menu by remember { mutableStateOf(PlayerMenu.None) }
+    var seekHintSec by remember { mutableStateOf<Int?>(null) }
+    var hideGeneration by remember { mutableIntStateOf(0) }
+    val transportFocus = remember { FocusRequester() }
+    val playFocus = remember { FocusRequester() }
+    val menuFocus = remember { FocusRequester() }
+    val upNextFocus = remember { FocusRequester() }
 
     LifecycleStartEffect(viewModel) {
         viewModel.onForeground()
         onStopOrDispose { viewModel.onBackground() }
     }
 
-    // Compose owns focus for the whole screen; PlayerView only renders. This keeps remote keys
-    // working after the controller auto-hides (its buttons would otherwise take and drop focus).
-    LaunchedEffect(state.error) {
-        if (!state.error) runCatching { keyFocus.requestFocus() }
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                PlayerEvent.SeriesComplete -> onSeriesComplete()
+                is PlayerEvent.OpenPicker -> onNeedPicker(event.season, event.episode)
+            }
+        }
+    }
+
+    fun showChrome() {
+        controlsVisible = true
+        hideGeneration += 1
+    }
+
+    fun hideChrome() {
+        if (menu != PlayerMenu.None || state.upNext != null) return
+        controlsVisible = false
+        menu = PlayerMenu.None
+    }
+
+    fun seekBy(seconds: Int) {
+        if (seconds >= 0) viewModel.seekForward() else viewModel.seekBack()
+        seekHintSec = seconds
+        showChrome()
+    }
+
+    LaunchedEffect(controlsVisible, state.isPlaying, state.isEnded, menu, state.upNext, hideGeneration, state.error) {
+        if (state.error || state.upNext != null || menu != PlayerMenu.None) return@LaunchedEffect
+        if (!controlsVisible) return@LaunchedEffect
+        if (!state.isPlaying || state.isEnded) return@LaunchedEffect
+        delay(CONTROLLER_TIMEOUT_MS)
+        hideChrome()
+    }
+
+    LaunchedEffect(seekHintSec) {
+        if (seekHintSec == null) return@LaunchedEffect
+        delay(SEEK_HINT_MS)
+        seekHintSec = null
+    }
+
+    LaunchedEffect(state.error, state.upNext, menu, controlsVisible) {
+        val target = when {
+            state.error -> return@LaunchedEffect
+            state.upNext != null -> upNextFocus
+            menu != PlayerMenu.None -> menuFocus
+            controlsVisible -> playFocus
+            else -> transportFocus
+        }
+        runCatching { target.requestFocus() }
+    }
+
+    BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null) {
+        when {
+            menu != PlayerMenu.None -> menu = PlayerMenu.None
+            else -> viewModel.dismissUpNext()
+        }
     }
 
     Box(
@@ -98,54 +154,124 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
             .testTag("player")
-            .focusRequester(keyFocus)
+            .focusRequester(transportFocus)
+            .focusable(
+                enabled = !controlsVisible &&
+                    menu == PlayerMenu.None &&
+                    state.upNext == null &&
+                    !state.error,
+            )
             .onKeyEvent { event ->
-                if (state.error) false else handlePlayerKey(event, viewModel.player, playerView, onExit)
-            }
-            .focusable(),
+                handlePlayerKey(
+                    event = event,
+                    controlsVisible = controlsVisible,
+                    menuOpen = menu != PlayerMenu.None,
+                    upNextOpen = state.upNext != null,
+                    error = state.error,
+                    onShowChrome = { showChrome() },
+                    onHideChrome = { hideChrome() },
+                    onTogglePlay = {
+                        viewModel.togglePlayPause()
+                        showChrome()
+                    },
+                    onPlay = {
+                        viewModel.play()
+                        showChrome()
+                    },
+                    onPause = {
+                        viewModel.pause()
+                        showChrome()
+                    },
+                    onSeekBack = { seekBy(-10) },
+                    onSeekForward = { seekBy(10) },
+                    onStop = onExit,
+                )
+            },
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     player = viewModel.player
-                    useController = true
-                    controllerAutoShow = true
-                    controllerHideOnTouch = false
-                    controllerShowTimeoutMs = CONTROLLER_TIMEOUT_MS
+                    useController = false
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
-                    setShowNextButton(false)
-                    setShowPreviousButton(false)
-                    setShowSubtitleButton(false)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     keepScreenOn = true
+                    subtitleView?.apply {
+                        setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.35f)
+                        setBottomPaddingFraction(0.12f)
+                    }
                     isFocusable = false
                     isClickable = false
                     descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                    setControllerVisibilityListener(
-                        PlayerView.ControllerVisibilityListener { visibility ->
-                            controlsVisible = visibility == View.VISIBLE
-                        },
-                    )
-                    playerView = this
                 }
             },
             update = { view ->
                 if (view.player !== viewModel.player) view.player = viewModel.player
             },
-            onRelease = { view ->
-                view.player = null
-                playerView = null
-            },
+            onRelease = { view -> view.player = null },
         )
 
         AnimatedVisibility(
-            visible = controlsVisible && !state.error,
+            visible = controlsVisible && !state.error && state.upNext == null,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.TopStart),
         ) {
-            TitleOverlay(title = state.item.title, subtitle = state.item.subtitle)
+            PlayerChrome(
+                state = state,
+                seekHintSec = seekHintSec,
+                playFocus = playFocus,
+                onPlayPause = {
+                    viewModel.togglePlayPause()
+                    showChrome()
+                },
+                onSeekBack = { seekBy(-10) },
+                onSeekForward = { seekBy(10) },
+                onCaptions = {
+                    showChrome()
+                    menu = PlayerMenu.Captions
+                },
+                onAudio = {
+                    showChrome()
+                    menu = PlayerMenu.Audio
+                },
+                onNext = {
+                    showChrome()
+                    viewModel.skipToNext()
+                },
+            )
+        }
+
+        if (menu != PlayerMenu.None && !state.error) {
+            TrackMenu(
+                title = stringResource(
+                    if (menu == PlayerMenu.Audio) R.string.player_audio else R.string.player_captions,
+                ),
+                tracks = if (menu == PlayerMenu.Audio) state.audioTracks else state.textTracks,
+                selectedId = if (menu == PlayerMenu.Audio) state.selectedAudioId else state.selectedTextId,
+                includeOff = menu == PlayerMenu.Captions,
+                emptyMessage = stringResource(
+                    if (menu == PlayerMenu.Audio) R.string.player_no_audio else R.string.player_no_captions,
+                ),
+                firstFocus = menuFocus,
+                onSelect = { id ->
+                    if (menu == PlayerMenu.Audio) {
+                        if (id != null) viewModel.selectAudio(id)
+                    } else {
+                        viewModel.selectText(id)
+                    }
+                    menu = PlayerMenu.None
+                    showChrome()
+                },
+            )
+        }
+
+        state.upNext?.let { upNext ->
+            UpNextOverlay(
+                upNext = upNext,
+                playFocus = upNextFocus,
+                onPlayNow = viewModel::playUpNextNow,
+            )
         }
 
         if (state.error) {
@@ -154,119 +280,69 @@ fun PlayerScreen(
     }
 }
 
-/** Maps TV remote keys onto the player. Returns true when consumed. */
 private fun handlePlayerKey(
     event: KeyEvent,
-    player: Player,
-    view: PlayerView?,
-    onExit: () -> Unit,
+    controlsVisible: Boolean,
+    menuOpen: Boolean,
+    upNextOpen: Boolean,
+    error: Boolean,
+    onShowChrome: () -> Unit,
+    onHideChrome: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onPlay: () -> Unit,
+    onPause: () -> Unit,
+    onSeekBack: () -> Unit,
+    onSeekForward: () -> Unit,
+    onStop: () -> Unit,
 ): Boolean {
-    if (event.type != KeyEventType.KeyDown) return false
-    fun reveal() = view?.showController()
-    return when (event.key) {
-        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.MediaPlayPause, Key.Spacebar -> {
-            if (player.playWhenReady) player.pause() else player.play()
-            reveal()
-            true
-        }
+    if (error || event.type != KeyEventType.KeyDown) return false
+    if (menuOpen || upNextOpen) return false
+    val media = when (event.key) {
         Key.MediaPlay -> {
-            player.play(); reveal(); true
+            onPlay(); true
         }
         Key.MediaPause -> {
-            player.pause(); reveal(); true
+            onPause(); true
         }
-        Key.DirectionLeft, Key.MediaRewind -> {
-            player.seekBack(); reveal(); true
+        Key.MediaPlayPause, Key.Spacebar -> {
+            onTogglePlay(); true
         }
-        Key.DirectionRight, Key.MediaFastForward -> {
-            player.seekForward(); reveal(); true
+        Key.MediaRewind -> {
+            onSeekBack(); true
         }
-        Key.DirectionUp, Key.DirectionDown -> {
-            if (view?.isControllerFullyVisible == true) view.hideController() else reveal()
-            true
+        Key.MediaFastForward -> {
+            onSeekForward(); true
         }
         Key.MediaStop -> {
-            onExit(); true
+            onStop(); true
+        }
+        else -> false
+    }
+    if (media) return true
+    if (!controlsVisible) {
+        return when (event.key) {
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                onTogglePlay(); true
+            }
+            Key.DirectionLeft -> {
+                onSeekBack(); true
+            }
+            Key.DirectionRight -> {
+                onSeekForward(); true
+            }
+            Key.DirectionUp, Key.DirectionDown -> {
+                onShowChrome(); true
+            }
+            else -> false
+        }
+    }
+    return when (event.key) {
+        Key.DirectionUp, Key.DirectionDown -> {
+            onHideChrome(); true
         }
         else -> false
     }
 }
 
-@Composable
-private fun TitleOverlay(title: String, subtitle: String?) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    0f to Zinc950.copy(alpha = 0.85f),
-                    1f to Color.Transparent,
-                ),
-            )
-            .padding(start = 48.dp, end = 48.dp, top = 32.dp, bottom = 56.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = WarmWhite,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!subtitle.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.titleMedium,
-                color = Zinc300,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlayerError(onBack: () -> Unit) {
-    val backFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { backFocus.requestFocus() } }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Zinc950.copy(alpha = 0.9f))
-            .testTag("player-error"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.player_error_title),
-                style = MaterialTheme.typography.headlineMedium,
-                color = WarmWhite,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = stringResource(R.string.player_error),
-                style = MaterialTheme.typography.bodyLarge,
-                color = Zinc400,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = onBack,
-                modifier = Modifier.focusRequester(backFocus).testTag("player-back"),
-                colors = ButtonDefaults.colors(
-                    containerColor = WarmWhite,
-                    contentColor = Zinc950,
-                    focusedContainerColor = WarmWhite,
-                    focusedContentColor = Zinc950,
-                ),
-            ) {
-                Text(stringResource(R.string.action_back), fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-private const val CONTROLLER_TIMEOUT_MS = 4_000
+private const val CONTROLLER_TIMEOUT_MS = 4_000L
+private const val SEEK_HINT_MS = 1_000L

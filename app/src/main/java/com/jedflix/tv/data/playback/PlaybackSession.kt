@@ -18,6 +18,10 @@ data class PlaybackItem(
     val rating: Double? = null,
     val genres: List<String> = emptyList(),
     val startPositionMs: Long = 0L,
+    /** IMDb id used to fetch the next episode's streams without another picker hop. */
+    val imdbId: String? = null,
+    /** Stream picker resolution token (e.g. "1080P"); binge autoplay must match this. */
+    val resolution: String? = null,
 )
 
 /** Single-slot hand-off between the stream picker and the player. */

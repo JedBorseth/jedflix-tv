@@ -230,7 +230,25 @@ fun JedflixNavHost(
                 PlayerScreen(
                     playbackSession = playbackSession,
                     library = library,
+                    settingsStore = settingsStore,
+                    tmdb = repository,
+                    comet = cometClient,
                     onExit = { navController.popBackStack() },
+                    onSeriesComplete = {
+                        navController.popBackStack(Routes.STREAMS, inclusive = true)
+                    },
+                    onNeedPicker = { season, episode ->
+                        val playing = playbackSession.current
+                        if (playing == null) {
+                            navController.popBackStack()
+                        } else {
+                            navController.navigate(
+                                Routes.streams(playing.mediaType, playing.tmdbId, season, episode),
+                            ) {
+                                popUpTo(Routes.STREAMS) { inclusive = true }
+                            }
+                        }
+                    },
                 )
             }
         }
