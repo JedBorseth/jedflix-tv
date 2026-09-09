@@ -105,6 +105,7 @@ fun SettingsScreen(
         onSearch = onSearch,
         onSettings = {},
         library = library,
+        contentFocusRequester = fieldFocus,
     ) {
         Column(
             modifier = Modifier

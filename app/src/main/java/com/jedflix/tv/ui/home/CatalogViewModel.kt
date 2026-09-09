@@ -15,6 +15,7 @@ import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
 import com.jedflix.tv.data.tmdb.ShelfPaging
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.ui.focus.RailRestore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +41,25 @@ class CatalogViewModel(
         CatalogSection.SHOWS -> MediaType.TV
     }
 
+    var focusRowId: String? = null
+        private set
+    var focusItemKey: String? = null
+        private set
+    var profileStateKey: String = "profile"
+        private set
+
     init {
+        viewModelScope.launch {
+            var previousProfile: Long? = null
+            library.observeActiveProfile().collect { profile ->
+                val id = profile?.id
+                if (previousProfile != null && previousProfile != id) {
+                    clearFocusMemory()
+                }
+                previousProfile = id
+                profileStateKey = id?.toString() ?: "profile"
+            }
+        }
         viewModelScope.launch {
             combine(
                 tmdb,
@@ -62,6 +81,21 @@ class CatalogViewModel(
     }
 
     fun retry() = load(force = true)
+
+    fun onBillboardPlayFocused() {
+        focusRowId = null
+        focusItemKey = RailRestore.BILLBOARD_PLAY
+    }
+
+    fun onTitleFocused(rowId: String, itemKey: String) {
+        focusRowId = rowId
+        focusItemKey = itemKey
+    }
+
+    fun clearFocusMemory() {
+        focusRowId = null
+        focusItemKey = null
+    }
 
     fun onShelfItemFocused(rowId: String, index: Int, itemCount: Int, hasMore: Boolean) {
         if (!ShelfPaging.shouldPrefetch(index, itemCount, hasMore)) return

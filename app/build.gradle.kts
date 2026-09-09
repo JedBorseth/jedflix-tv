@@ -27,8 +27,8 @@ android {
         applicationId = "com.jedflix.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.3.5"
+        versionCode = 10
+        versionName = "0.4.0"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
     }

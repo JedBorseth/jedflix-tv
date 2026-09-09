@@ -28,12 +28,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +86,12 @@ import com.jedflix.tv.ui.components.ContentStartPadding
 import com.jedflix.tv.ui.components.SkeletonBlock
 import com.jedflix.tv.ui.components.SkeletonRow
 import com.jedflix.tv.ui.components.rememberShimmerBrush
+import com.jedflix.tv.ui.focus.DetailRail
+import com.jedflix.tv.ui.focus.RailRestore
+import com.jedflix.tv.ui.focus.independentRail
+import com.jedflix.tv.ui.focus.optionalFocusRequester
+import com.jedflix.tv.ui.focus.railItemFocus
+import com.jedflix.tv.ui.focus.rememberRailListState
 import com.jedflix.tv.ui.home.ErrorKind
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -133,11 +142,10 @@ fun DetailScreen(
                 if (ready != null) {
                     DetailContent(
                         state = ready,
-                        onSelectSeason = viewModel::selectSeason,
+                        viewModel = viewModel,
                         onTitleClick = onTitleClick,
                         onPlay = onPlay,
                         onPlayEpisode = onPlayEpisode,
-                        onToggleMyList = { viewModel.toggleMyList(ready.details.title) },
                     )
                 }
             }
@@ -155,29 +163,52 @@ private object NoAutoScrollSpec : BringIntoViewSpec {
 @Composable
 private fun DetailContent(
     state: DetailUiState.Ready,
-    onSelectSeason: (Int) -> Unit,
+    viewModel: DetailViewModel,
     onTitleClick: (MediaTitle) -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onPlayEpisode: (season: Int, episode: Int) -> Unit,
-    onToggleMyList: () -> Unit,
 ) {
     val details = state.details
     val playFocus = remember { FocusRequester() }
     val episodesFocus = remember { FocusRequester() }
+    val castEnter = remember { FocusRequester() }
+    val seasonEnter = remember { FocusRequester() }
+    val episodeEnter = remember { FocusRequester() }
+    val similarEnter = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val rowScrollSpec = LocalBringIntoViewSpec.current
     val pinSpace = LocalConfiguration.current.screenHeightDp.dp * 0.62f
-    var focusedSection by remember(details.title.key) { mutableIntStateOf(0) }
     val hasCast = details.cast.isNotEmpty()
     val hasEpisodes = details.seasons.isNotEmpty()
+    val hasSimilar = details.similar.isNotEmpty()
     val castIndex = 1
     val episodesIndex = 1 + if (hasCast) 1 else 0
     val similarIndex = 1 + (if (hasCast) 1 else 0) + (if (hasEpisodes) 1 else 0)
+    val initialSection = when (viewModel.focusRail) {
+        DetailRail.HERO -> 0
+        DetailRail.CAST -> castIndex
+        DetailRail.SEASONS, DetailRail.EPISODES -> episodesIndex
+        DetailRail.SIMILAR -> similarIndex
+    }
+    var focusedSection by remember(details.title.key) { mutableIntStateOf(initialSection) }
+
+    DisposableEffect(details.title.key) {
+        viewModel.beginRestore()
+        onDispose { }
+    }
 
     LaunchedEffect(details.title.key) {
-        focusedSection = 0
-        runCatching { playFocus.requestFocus() }
+        withFrameNanos { }
+        val target = when (viewModel.focusRail) {
+            DetailRail.HERO -> playFocus
+            DetailRail.CAST -> castEnter
+            DetailRail.SEASONS -> seasonEnter
+            DetailRail.EPISODES -> episodeEnter
+            DetailRail.SIMILAR -> similarEnter
+        }
+        runCatching { target.requestFocus() }
+        viewModel.finishRestore()
     }
 
     LaunchedEffect(focusedSection) {
@@ -203,10 +234,14 @@ private fun DetailContent(
                         inMyList = state.inMyList,
                         resume = state.resume,
                         playFocusRequester = playFocus,
+                        downFocusRequester = null,
                         onPlay = onPlay,
-                        onToggleMyList = onToggleMyList,
+                        onToggleMyList = { viewModel.toggleMyList(details.title) },
                         onBrowseEpisodes = {
                             focusedSection = episodesIndex
+                            viewModel.onEpisodeFocused(
+                                RailRestore.itemKey(null, state.episodes.map { it.episodeNumber }) ?: 1,
+                            )
                             scope.launch {
                                 listState.animateScrollToItem(episodesIndex)
                                 runCatching { episodesFocus.requestFocus() }
@@ -214,7 +249,12 @@ private fun DetailContent(
                         },
                         modifier = Modifier
                             .focusGroup()
-                            .onFocusChanged { if (it.hasFocus) focusedSection = 0 },
+                            .onFocusChanged {
+                                if (it.hasFocus) {
+                                    focusedSection = 0
+                                    viewModel.onHeroFocused()
+                                }
+                            },
                     )
                 }
                 if (hasCast) {
@@ -222,6 +262,11 @@ private fun DetailContent(
                         CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
                             CastRow(
                                 cast = details.cast,
+                                enter = castEnter,
+                                restoredId = viewModel.castId,
+                                upFocusRequester = null,
+                                downFocusRequester = null,
+                                onMemberFocused = viewModel::onCastFocused,
                                 modifier = Modifier
                                     .focusGroup()
                                     .onFocusChanged { if (it.hasFocus) focusedSection = castIndex },
@@ -238,7 +283,16 @@ private fun DetailContent(
                                 episodes = state.episodes,
                                 loading = state.episodesLoading,
                                 firstEpisodeFocus = episodesFocus,
-                                onSelectSeason = onSelectSeason,
+                                seasonEnter = seasonEnter,
+                                episodeEnter = episodeEnter,
+                                restoredSeason = viewModel.seasonChip,
+                                restoredEpisode = viewModel.episodeNumber,
+                                upFromSeasons = null,
+                                downFromSeasons = episodeEnter,
+                                downFromEpisodes = null,
+                                onSelectSeason = viewModel::selectSeason,
+                                onSeasonFocused = viewModel::onSeasonFocused,
+                                onEpisodeFocused = viewModel::onEpisodeFocused,
                                 onPlayEpisode = { episode ->
                                     state.selectedSeason?.let { season -> onPlayEpisode(season, episode.episodeNumber) }
                                 },
@@ -249,7 +303,7 @@ private fun DetailContent(
                         }
                     }
                 }
-                if (details.similar.isNotEmpty()) {
+                if (hasSimilar) {
                     item(key = "similar") {
                         CompositionLocalProvider(LocalBringIntoViewSpec provides rowScrollSpec) {
                             CatalogRowView(
@@ -262,6 +316,11 @@ private fun DetailContent(
                                     .focusGroup()
                                     .onFocusChanged { if (it.hasFocus) focusedSection = similarIndex },
                                 onItemClick = onTitleClick,
+                                onItemFocused = { _, title -> viewModel.onSimilarFocused(title.key) },
+                                enterFocusRequester = similarEnter,
+                                restoredItemKey = viewModel.similarKey,
+                                upFocusRequester = null,
+                                stateKey = "similar",
                             )
                         }
                     }
@@ -280,6 +339,7 @@ private fun DetailHero(
     inMyList: Boolean,
     resume: LibraryItem?,
     playFocusRequester: FocusRequester,
+    downFocusRequester: FocusRequester?,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onToggleMyList: () -> Unit,
     onBrowseEpisodes: () -> Unit,
@@ -345,7 +405,10 @@ private fun DetailHero(
                             label = stringResource(R.string.action_resume),
                             icon = JedflixIcons.Play,
                             filled = true,
-                            modifier = Modifier.focusRequester(playFocusRequester).testTag("detail-play"),
+                            modifier = Modifier
+                                .focusRequester(playFocusRequester)
+                                .testTag("detail-play")
+                                .railItemFocus(down = downFocusRequester),
                             onClick = { onPlay(resume.season, resume.episode) },
                         )
                     }
@@ -354,9 +417,9 @@ private fun DetailHero(
                         icon = JedflixIcons.Play,
                         filled = resume == null,
                         modifier = if (resume == null) {
-                            Modifier.focusRequester(playFocusRequester)
+                            Modifier.focusRequester(playFocusRequester).railItemFocus(down = downFocusRequester)
                         } else {
-                            Modifier
+                            Modifier.railItemFocus(down = downFocusRequester)
                         },
                         onClick = onBrowseEpisodes,
                     )
@@ -367,7 +430,10 @@ private fun DetailHero(
                         ),
                         icon = JedflixIcons.Play,
                         filled = true,
-                        modifier = Modifier.focusRequester(playFocusRequester).testTag("detail-play"),
+                        modifier = Modifier
+                            .focusRequester(playFocusRequester)
+                            .testTag("detail-play")
+                            .railItemFocus(down = downFocusRequester),
                         onClick = { onPlay(null, null) },
                     )
                 }
@@ -377,6 +443,7 @@ private fun DetailHero(
                     ),
                     icon = if (inMyList) JedflixIcons.Check else JedflixIcons.Add,
                     filled = false,
+                    modifier = Modifier.railItemFocus(down = downFocusRequester),
                     onClick = onToggleMyList,
                 )
             }
@@ -409,7 +476,18 @@ private fun ActionButton(
 }
 
 @Composable
-private fun CastRow(cast: List<CastMember>, modifier: Modifier = Modifier) {
+private fun CastRow(
+    cast: List<CastMember>,
+    enter: FocusRequester,
+    restoredId: Int?,
+    upFocusRequester: FocusRequester?,
+    downFocusRequester: FocusRequester?,
+    onMemberFocused: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var lastId by remember { mutableStateOf(restoredId) }
+    val enterId = RailRestore.itemKey(lastId, cast.map { it.id })
+    val listState = rememberRailListState("cast")
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = stringResource(R.string.row_cast),
@@ -418,23 +496,40 @@ private fun CastRow(cast: List<CastMember>, modifier: Modifier = Modifier) {
             modifier = Modifier.padding(start = ContentStartPadding),
         )
         LazyRow(
+            state = listState,
             contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp, top = 8.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.independentRail(enter),
         ) {
-            items(cast, key = { it.id }) { member ->
-                CastCard(member)
+            itemsIndexed(cast, key = { _, member -> member.id }) { index, member ->
+                CastCard(
+                    member = member,
+                    modifier = Modifier
+                        .optionalFocusRequester(if (member.id == enterId) enter else null)
+                        .railItemFocus(
+                            up = upFocusRequester,
+                            down = downFocusRequester,
+                            blockRight = index == cast.lastIndex,
+                        )
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                lastId = member.id
+                                onMemberFocused(member.id)
+                            }
+                        },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CastCard(member: CastMember) {
+private fun CastCard(member: CastMember, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(6.dp)
     Column(modifier = Modifier.width(110.dp)) {
         Surface(
             onClick = {},
-            modifier = Modifier
+            modifier = modifier
                 .width(110.dp)
                 .height(150.dp)
                 .testTag("cast-card"),
@@ -488,10 +583,26 @@ private fun EpisodeSection(
     episodes: List<TvEpisode>,
     loading: Boolean,
     firstEpisodeFocus: FocusRequester,
+    seasonEnter: FocusRequester,
+    episodeEnter: FocusRequester,
+    restoredSeason: Int?,
+    restoredEpisode: Int?,
+    upFromSeasons: FocusRequester?,
+    downFromSeasons: FocusRequester?,
+    downFromEpisodes: FocusRequester?,
     onSelectSeason: (Int) -> Unit,
+    onSeasonFocused: (Int) -> Unit,
+    onEpisodeFocused: (Int) -> Unit,
     onPlayEpisode: (TvEpisode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var lastSeason by remember { mutableStateOf(restoredSeason) }
+    var lastEpisode by remember(selectedSeason) { mutableStateOf(restoredEpisode) }
+    val enterSeason = RailRestore.itemKey(lastSeason, seasons.map { it.seasonNumber })
+    val enterEpisode = RailRestore.itemKey(lastEpisode, episodes.map { it.episodeNumber })
+    val seasonState = rememberRailListState("seasons")
+    val episodeState = rememberRailListState("episodes-$selectedSeason")
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = stringResource(R.string.row_episodes),
@@ -500,13 +611,28 @@ private fun EpisodeSection(
             modifier = Modifier.padding(start = ContentStartPadding),
         )
         LazyRow(
+            state = seasonState,
             contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.independentRail(seasonEnter),
         ) {
-            items(seasons, key = { it.seasonNumber }) { season ->
+            itemsIndexed(seasons, key = { _, season -> season.seasonNumber }) { index, season ->
                 val selected = season.seasonNumber == selectedSeason
                 Button(
                     onClick = { onSelectSeason(season.seasonNumber) },
+                    modifier = Modifier
+                        .optionalFocusRequester(if (season.seasonNumber == enterSeason) seasonEnter else null)
+                        .railItemFocus(
+                            up = upFromSeasons,
+                            down = downFromSeasons,
+                            blockRight = index == seasons.lastIndex,
+                        )
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                lastSeason = season.seasonNumber
+                                onSeasonFocused(season.seasonNumber)
+                            }
+                        },
                     colors = ButtonDefaults.colors(
                         containerColor = if (selected) WarmWhite.copy(alpha = 0.22f) else Color.Transparent,
                         contentColor = if (selected) WarmWhite else Zinc400,
@@ -530,13 +656,26 @@ private fun EpisodeSection(
             }
         } else {
             LazyRow(
+                state = episodeState,
                 contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp, top = 12.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.independentRail(episodeEnter),
             ) {
                 itemsIndexed(episodes, key = { _, ep -> ep.episodeNumber }) { index, episode ->
                     EpisodeCard(
                         episode = episode,
-                        modifier = if (index == 0) Modifier.focusRequester(firstEpisodeFocus) else Modifier,
+                        modifier = Modifier
+                            .optionalFocusRequester(if (index == 0) firstEpisodeFocus else null)
+                            .optionalFocusRequester(if (episode.episodeNumber == enterEpisode) episodeEnter else null)
+                            .railItemFocus(
+                                up = seasonEnter,
+                                down = downFromEpisodes,
+                                blockRight = index == episodes.lastIndex,
+                            ),
+                        onFocused = {
+                            lastEpisode = episode.episodeNumber
+                            onEpisodeFocused(episode.episodeNumber)
+                        },
                         onClick = { onPlayEpisode(episode) },
                     )
                 }
@@ -546,15 +685,21 @@ private fun EpisodeSection(
 }
 
 @Composable
-private fun EpisodeCard(episode: TvEpisode, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun EpisodeCard(
+    episode: TvEpisode,
+    modifier: Modifier = Modifier,
+    onFocused: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val shape = RoundedCornerShape(6.dp)
-    Column(modifier = modifier.width(220.dp)) {
+    Column(modifier = Modifier.width(220.dp)) {
         Surface(
             onClick = onClick,
-            modifier = Modifier
+            modifier = modifier
                 .width(220.dp)
                 .height(124.dp)
-                .testTag("episode-card"),
+                .testTag("episode-card")
+                .onFocusChanged { if (it.isFocused) onFocused?.invoke() },
             shape = ClickableSurfaceDefaults.shape(shape = shape),
             colors = ClickableSurfaceDefaults.colors(
                 containerColor = Zinc800,

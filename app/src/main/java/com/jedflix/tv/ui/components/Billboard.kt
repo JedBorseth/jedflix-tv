@@ -15,12 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -40,6 +41,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.tmdb.MediaTitle
+import com.jedflix.tv.ui.focus.optionalFocusRequester
+import com.jedflix.tv.ui.focus.railItemFocus
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc300
@@ -109,16 +112,30 @@ fun BillboardInfo(
     modifier: Modifier = Modifier,
     inMyList: Boolean = false,
     playFocusRequester: FocusRequester? = null,
+    contentReturnFocus: FocusRequester? = null,
+    returnToPlay: Boolean = false,
     upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     onPlay: () -> Unit = {},
     onMyList: () -> Unit = {},
+    onPlayFocused: () -> Unit = {},
 ) {
+    val playEnter = playFocusRequester
     Column(
         modifier = modifier
             .height(BillboardInfoHeight)
             .padding(start = ContentStartPadding, top = 32.dp)
             .fillMaxWidth(0.48f)
-            .testTag("billboard"),
+            .testTag("billboard")
+            .then(
+                if (playEnter != null) {
+                    Modifier
+                        .focusGroup()
+                        .focusProperties { onEnter = { playEnter.requestFocus() } }
+                } else {
+                    Modifier
+                },
+            ),
         verticalArrangement = Arrangement.Bottom,
     ) {
         Text(
@@ -153,14 +170,10 @@ fun BillboardInfo(
                 contentColor = Zinc950,
                 testTag = "billboard-play",
                 modifier = Modifier
-                    .then(playFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
-                    .then(
-                        if (upFocusRequester != null) {
-                            Modifier.focusProperties { up = upFocusRequester }
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .optionalFocusRequester(playFocusRequester)
+                    .optionalFocusRequester(if (returnToPlay) contentReturnFocus else null)
+                    .onFocusChanged { if (it.isFocused) onPlayFocused() }
+                    .railItemFocus(up = upFocusRequester, down = downFocusRequester),
                 onClick = onPlay,
             )
             BillboardButton(
@@ -171,6 +184,10 @@ fun BillboardInfo(
                 containerColor = Color.White.copy(alpha = 0.22f),
                 contentColor = WarmWhite,
                 testTag = "billboard-my-list",
+                modifier = Modifier.railItemFocus(
+                    up = upFocusRequester,
+                    down = downFocusRequester,
+                ),
                 onClick = onMyList,
             )
         }

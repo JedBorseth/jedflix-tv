@@ -9,6 +9,7 @@ import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.ui.focus.DetailRail
 import com.jedflix.tv.ui.home.ErrorKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -29,6 +30,18 @@ class DetailViewModel(
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
     private var libraryJob: Job? = null
 
+    var focusRail: DetailRail = DetailRail.HERO
+        private set
+    var castId: Int? = null
+        private set
+    var seasonChip: Int? = null
+        private set
+    var episodeNumber: Int? = null
+        private set
+    var similarKey: String? = null
+        private set
+    private var restoringFocus = true
+
     init {
         load(force = false)
     }
@@ -39,9 +52,43 @@ class DetailViewModel(
         viewModelScope.launch { library.toggleMyList(title) }
     }
 
+    fun onHeroFocused() {
+        if (restoringFocus && focusRail != DetailRail.HERO) return
+        focusRail = DetailRail.HERO
+    }
+
+    fun onCastFocused(id: Int) {
+        focusRail = DetailRail.CAST
+        castId = id
+    }
+
+    fun onSeasonFocused(seasonNumber: Int) {
+        focusRail = DetailRail.SEASONS
+        seasonChip = seasonNumber
+    }
+
+    fun onEpisodeFocused(number: Int) {
+        focusRail = DetailRail.EPISODES
+        episodeNumber = number
+    }
+
+    fun onSimilarFocused(itemKey: String) {
+        focusRail = DetailRail.SIMILAR
+        similarKey = itemKey
+    }
+
+    fun finishRestore() {
+        restoringFocus = false
+    }
+
+    fun beginRestore() {
+        restoringFocus = true
+    }
+
     fun selectSeason(seasonNumber: Int) {
         val current = _state.value as? DetailUiState.Ready ?: return
         if (current.selectedSeason == seasonNumber && current.episodes.isNotEmpty()) return
+        episodeNumber = null
         viewModelScope.launch {
             _state.value = current.copy(selectedSeason = seasonNumber, episodesLoading = true)
             val episodes = runCatching { repository.loadSeasonEpisodes(mediaId, seasonNumber) }

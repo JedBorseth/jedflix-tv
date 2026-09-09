@@ -1,5 +1,6 @@
 package com.jedflix.tv.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,12 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,11 +68,22 @@ fun JedflixDrawer(
     onSettings: () -> Unit,
     library: UserLibraryRepository,
     profileFocusRequester: FocusRequester? = null,
+    contentFocusRequester: FocusRequester? = null,
+    consumeRootBack: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val profileViewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.Factory(library))
     val profileState by profileViewModel.state.collectAsStateWithLifecycle()
     val avatarFocus = profileFocusRequester ?: remember { FocusRequester() }
+    val contentFocus = contentFocusRequester ?: remember { FocusRequester() }
+    var drawerOpen by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = drawerOpen) {
+        runCatching { contentFocus.requestFocus() }
+    }
+    BackHandler(enabled = consumeRootBack && !drawerOpen) {
+        // Home, drawer closed: consume Back so the Activity never finishes.
+    }
 
     ModalNavigationDrawer(
         drawerContent = { drawerValue ->
@@ -80,6 +95,7 @@ fun JedflixDrawer(
                 onSelect = onSelect,
                 onSearch = onSearch,
                 onSettings = onSettings,
+                modifier = Modifier.onFocusChanged { drawerOpen = it.hasFocus },
             )
         },
         scrimBrush = Brush.horizontalGradient(
@@ -96,7 +112,11 @@ fun JedflixDrawer(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(top = 20.dp, end = 28.dp)
-                        .focusRequester(avatarFocus),
+                        .focusRequester(avatarFocus)
+                        .focusProperties {
+                            left = contentFocus
+                            down = contentFocus
+                        },
                 )
                 ProfileOverlayHost(
                     state = profileState,
