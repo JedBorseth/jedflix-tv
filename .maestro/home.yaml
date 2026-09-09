@@ -17,7 +17,7 @@ name: Home catalog smoke test
     visible:
       id: "catalog"
     timeout: 30000
-- assertVisible: "Trending Now"
+- assertVisible: "Jed's Movies"
 - assertVisible:
     id: "billboard"
 - assertVisible:
@@ -25,11 +25,11 @@ name: Home catalog smoke test
 - assertNotVisible:
     id: "catalog-skeleton"
 
-# Focus starts on the first Trending card (immersive row). D-pad down pins the next shelf.
+# Focus starts on the first editorial shelf. D-pad down reveals the next rails.
 - repeat:
     while:
-      notVisible: "Popular Movies"
-    times: 3
+      notVisible: "Crave Movies"
+    times: 6
     commands:
       - pressKey: Remote Dpad Down
-- assertVisible: "Popular Movies"
+- assertVisible: "Crave Movies"

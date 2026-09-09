@@ -1,0 +1,52 @@
+appId: com.jedflix.tv
+name: Movies and Shows shelves
+---
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- assertVisible: "Jed's Movies"
+
+# Catalog focus starts on a poster; LEFT opens the rail, one down is Movies.
+- pressKey: Remote Dpad Left
+- pressKey: Remote Dpad Down
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- assertVisible: "Jed's Movies"
+- repeat:
+    while:
+      notVisible: "Crave Movies"
+    times: 6
+    commands:
+      - pressKey: Remote Dpad Down
+- assertVisible: "Crave Movies"
+- assertNotVisible: "Jed's Shows"
+
+# Shows is one more down from Movies on the rail.
+- pressKey: Remote Dpad Left
+- pressKey: Remote Dpad Down
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- assertVisible: "Jed's Shows"
+- repeat:
+    while:
+      notVisible: "Crave Shows"
+    times: 6
+    commands:
+      - pressKey: Remote Dpad Down
+- assertVisible: "Crave Shows"
+- assertNotVisible: "Jed's Movies"

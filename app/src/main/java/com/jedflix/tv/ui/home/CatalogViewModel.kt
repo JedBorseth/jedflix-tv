@@ -13,6 +13,7 @@ import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
+import com.jedflix.tv.data.tmdb.ShelfPaging
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +63,17 @@ class CatalogViewModel(
 
     fun retry() = load(force = true)
 
+    fun onShelfItemFocused(rowId: String, index: Int, itemCount: Int, hasMore: Boolean) {
+        if (!ShelfPaging.shouldPrefetch(index, itemCount, hasMore)) return
+        viewModelScope.launch {
+            val updated = runCatching { repository.loadMore(section, rowId) }.getOrNull() ?: return@launch
+            val current = tmdb.value
+            if (current is CatalogUiState.Ready) {
+                tmdb.value = CatalogUiState.Ready(updated)
+            }
+        }
+    }
+
     fun toggleMyList(title: MediaTitle) {
         viewModelScope.launch { library.toggleMyList(title) }
     }
@@ -98,7 +110,7 @@ private fun mergePersonalRows(
     myList: List<MediaTitle>,
     history: List<LibraryItem>,
 ): Catalog {
-    val tmdbRows = catalog.rows.mapIndexed { index, row -> row.copy(drivesHero = index == 0) }
+    val tmdbRows = catalog.rows
     val personal = buildList {
         if (continueWatching.isNotEmpty()) {
             add(

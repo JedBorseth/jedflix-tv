@@ -30,7 +30,7 @@ fun CatalogRowView(
     row: CatalogRow,
     modifier: Modifier = Modifier,
     progressFor: ((MediaTitle) -> Float?)? = null,
-    onItemFocused: ((MediaTitle) -> Unit)? = null,
+    onItemFocused: ((index: Int, title: MediaTitle) -> Unit)? = null,
     onItemClick: ((MediaTitle) -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     /** Where D-pad up should go from this row (e.g. the billboard's Play button). */
@@ -50,7 +50,6 @@ fun CatalogRowView(
             modifier = Modifier.padding(start = ContentStartPadding),
         )
         LazyRow(
-            // Vertical padding leaves room for the focused card's scale so the row doesn't clip it.
             contentPadding = PaddingValues(start = ContentStartPadding, end = 48.dp, top = 8.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
@@ -65,12 +64,15 @@ fun CatalogRowView(
                 .focusRestorer(),
         ) {
             itemsIndexed(row.items, key = { _, item -> item.key }) { index, item ->
-                val requester = if (index == 0) firstItemFocusRequester else null
                 PosterCard(
                     title = item,
                     progress = if (row.showProgress) progressFor?.invoke(item) else null,
-                    modifier = if (requester != null) Modifier.focusRequester(requester) else Modifier,
-                    onFocused = onItemFocused?.let { callback -> { callback(item) } },
+                    modifier = if (index == 0 && firstItemFocusRequester != null) {
+                        Modifier.focusRequester(firstItemFocusRequester)
+                    } else {
+                        Modifier
+                    },
+                    onFocused = { onItemFocused?.invoke(index, item) },
                     onClick = { onItemClick?.invoke(item) },
                 )
             }

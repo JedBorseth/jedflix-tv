@@ -10,6 +10,13 @@ data class TmdbPagedResponse(
 )
 
 @Serializable
+data class TmdbListResponse(
+    val page: Int = 1,
+    @SerialName("item_count") val itemCount: Int = 0,
+    val items: List<TmdbMediaDto> = emptyList(),
+)
+
+@Serializable
 data class TmdbMediaDto(
     val id: Int,
     @SerialName("media_type") val mediaType: String? = null,

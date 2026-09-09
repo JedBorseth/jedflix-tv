@@ -8,7 +8,10 @@ import retrofit2.http.Query
 interface TmdbApi {
 
     @GET("trending/{mediaType}/week")
-    suspend fun trending(@Path("mediaType") mediaType: String): TmdbPagedResponse
+    suspend fun trending(
+        @Path("mediaType") mediaType: String,
+        @Query("page") page: Int = 1,
+    ): TmdbPagedResponse
 
     @GET("movie/{list}")
     suspend fun movieList(@Path("list") list: String, @Query("page") page: Int = 1): TmdbPagedResponse
@@ -19,12 +22,20 @@ interface TmdbApi {
     @GET("discover/{mediaType}")
     suspend fun discover(
         @Path("mediaType") mediaType: String,
-        @Query("with_genres") genreId: Int,
+        @Query("with_genres") genreId: Int? = null,
         @Query("sort_by") sortBy: String = "popularity.desc",
         @Query("include_adult") includeAdult: Boolean = false,
-        @Query("vote_count.gte") minVotes: Int = 100,
+        @Query("vote_count.gte") minVotes: Int? = 100,
         @Query("page") page: Int = 1,
+        @Query("with_watch_providers") watchProviders: Int? = null,
+        @Query("watch_region") watchRegion: String? = null,
     ): TmdbPagedResponse
+
+    @GET("list/{listId}")
+    suspend fun userList(
+        @Path("listId") listId: Int,
+        @Query("page") page: Int = 1,
+    ): TmdbListResponse
 
     @GET("{mediaType}/{id}")
     suspend fun details(

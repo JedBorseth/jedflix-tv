@@ -32,10 +32,12 @@ data class CatalogRow(
     val drivesHero: Boolean = false,
     /** Draw a playback bar on each poster (continue watching). */
     val showProgress: Boolean = false,
+    /** A second TMDB page can still be fetched for this Shelf. */
+    val hasMore: Boolean = false,
 )
 
 data class Catalog(
-    /** Titles eligible for the billboard; the first row mirrors these so focus drives the hero. */
+    /** Titles eligible for the billboard, taken from the Trending shelf. */
     val featured: List<MediaTitle>,
     val rows: List<CatalogRow>,
 )

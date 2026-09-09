@@ -92,12 +92,16 @@ fun CatalogScreen(
         profileFocusRequester = profileFocus,
     ) {
         Crossfade(
-            targetState = state,
+            targetState = when (state) {
+                CatalogUiState.Loading -> "loading"
+                is CatalogUiState.Error -> "error"
+                is CatalogUiState.Ready -> "ready"
+            },
             animationSpec = tween(400),
             label = "catalog-state",
             modifier = Modifier.fillMaxSize(),
-        ) { current ->
-            when (current) {
+        ) { _ ->
+            when (val current = state) {
                 CatalogUiState.Loading -> CatalogSkeletons(modifier = Modifier.padding(start = RailCollapsedWidth))
                 is CatalogUiState.Error -> CatalogError(kind = current.kind, onRetry = viewModel::retry)
                 is CatalogUiState.Ready -> CatalogContent(
@@ -108,6 +112,7 @@ fun CatalogScreen(
                     onTitleClick = onTitleClick,
                     onContinueWatching = onContinueWatching,
                     onToggleMyList = viewModel::toggleMyList,
+                    onShelfItemFocused = viewModel::onShelfItemFocused,
                 )
             }
         }
@@ -130,18 +135,20 @@ private fun CatalogContent(
     onTitleClick: (MediaTitle) -> Unit,
     onContinueWatching: (LibraryItem) -> Unit,
     onToggleMyList: (MediaTitle) -> Unit,
+    onShelfItemFocused: (rowId: String, index: Int, itemCount: Int, hasMore: Boolean) -> Unit,
 ) {
     val fallbackHero = catalog.featured.firstOrNull() ?: catalog.rows.first().items.first()
-    var hero: MediaTitle by remember(catalog) { mutableStateOf(fallbackHero) }
-    var backdrop: MediaTitle by remember(catalog) { mutableStateOf(fallbackHero) }
-    var focusedRow by remember(catalog) { mutableIntStateOf(0) }
+    var hero: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    var backdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    var focusedRow by remember { mutableIntStateOf(0) }
     val firstCardFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val rowScrollSpec = LocalBringIntoViewSpec.current
     val continueByKey = remember(continueWatching) { continueWatching.associateBy { it.title.key } }
+    val rowIds = catalog.rows.map { it.id }
 
-    LaunchedEffect(catalog) {
+    LaunchedEffect(rowIds) {
         runCatching { firstCardFocus.requestFocus() }
     }
 
@@ -190,12 +197,13 @@ private fun CatalogContent(
                         CatalogRowView(
                             row = row,
                             progressFor = { title -> continueByKey[title.key]?.progress },
-                            onItemFocused = { focused ->
+                            onItemFocused = { itemIndex, focused ->
                                 focusedRow = index
                                 if (row.drivesHero) {
                                     hero = focused
                                     backdrop = focused
                                 }
+                                onShelfItemFocused(row.id, itemIndex, row.items.size, row.hasMore)
                             },
                             onItemClick = { title ->
                                 if (row.id == LibraryRows.CONTINUE_WATCHING) {

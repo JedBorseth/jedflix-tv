@@ -1,0 +1,38 @@
+appId: com.jedflix.tv
+name: Shelf page-2 prefetch
+---
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "splash"
+    timeout: 5000
+    optional: true
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 30000
+- repeat:
+    while:
+      notVisible: "Crave Movies"
+    times: 6
+    commands:
+      - pressKey: Remote Dpad Down
+- assertVisible: "Crave Movies"
+# 8th-last of the first 20 Titles is index 12; further rights load page 2.
+- repeat:
+    times: 12
+    commands:
+      - pressKey: Remote Dpad Right
+- extendedWaitUntil:
+    visible:
+      id: "catalog"
+    timeout: 5000
+- repeat:
+    times: 30
+    commands:
+      - pressKey: Remote Dpad Right
+- assertVisible: "Crave Movies"
+- assertVisible:
+    id: "poster-card"
