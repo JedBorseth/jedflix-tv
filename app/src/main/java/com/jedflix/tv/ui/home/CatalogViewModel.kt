@@ -7,9 +7,13 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.LibraryRows
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.CatalogSection
+import com.jedflix.tv.data.tmdb.HomeShelfConfig
+import com.jedflix.tv.data.tmdb.HomeShelfLayout
+import com.jedflix.tv.data.tmdb.HomeShelfPref
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
@@ -27,6 +31,7 @@ class CatalogViewModel(
     private val section: CatalogSection,
     private val repository: TmdbRepository,
     private val library: UserLibraryRepository,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
 
     private val tmdb = MutableStateFlow<CatalogUiState>(
@@ -48,6 +53,9 @@ class CatalogViewModel(
     var profileStateKey: String = "profile"
         private set
 
+    private var homeShelves: List<HomeShelfPref>? =
+        if (section == CatalogSection.HOME) HomeShelfLayout.resolve(HomeShelfConfig()) else null
+
     init {
         viewModelScope.launch {
             var previousProfile: Long? = null
@@ -61,23 +69,61 @@ class CatalogViewModel(
             }
         }
         viewModelScope.launch {
-            combine(
-                tmdb,
-                library.observeContinueWatching(mediaFilter),
-                library.observeMyList(mediaFilter),
-                library.observeWatchHistory(mediaFilter),
-            ) { tmdbState, continueWatching, myList, history ->
-                when (tmdbState) {
-                    is CatalogUiState.Ready -> CatalogUiState.Ready(
-                        catalog = mergePersonalRows(tmdbState.catalog, continueWatching, myList, history),
-                        myListKeys = myList.map { it.key }.toSet(),
-                        continueWatching = continueWatching,
-                    )
-                    else -> tmdbState
-                }
-            }.collect { _state.value = it }
+            if (section == CatalogSection.HOME) {
+                combine(
+                    tmdb,
+                    library.observeContinueWatching(mediaFilter),
+                    library.observeMyList(mediaFilter),
+                    library.observeWatchHistory(mediaFilter),
+                    settingsStore.homeShelfConfig,
+                ) { tmdbState, continueWatching, myList, history, config ->
+                    when (tmdbState) {
+                        is CatalogUiState.Ready -> CatalogUiState.Ready(
+                            catalog = mergePersonalRows(
+                                tmdbState.catalog.copy(
+                                    rows = HomeShelfLayout.arrangeRows(
+                                        tmdbState.catalog.rows,
+                                        HomeShelfLayout.resolve(config),
+                                    ),
+                                ),
+                                continueWatching,
+                                myList,
+                                history,
+                            ),
+                            myListKeys = myList.map { it.key }.toSet(),
+                            continueWatching = continueWatching,
+                        )
+                        else -> tmdbState
+                    }
+                }.collect { _state.value = it }
+            } else {
+                combine(
+                    tmdb,
+                    library.observeContinueWatching(mediaFilter),
+                    library.observeMyList(mediaFilter),
+                    library.observeWatchHistory(mediaFilter),
+                ) { tmdbState, continueWatching, myList, history ->
+                    when (tmdbState) {
+                        is CatalogUiState.Ready -> CatalogUiState.Ready(
+                            catalog = mergePersonalRows(tmdbState.catalog, continueWatching, myList, history),
+                            myListKeys = myList.map { it.key }.toSet(),
+                            continueWatching = continueWatching,
+                        )
+                        else -> tmdbState
+                    }
+                }.collect { _state.value = it }
+            }
         }
-        if (tmdb.value is CatalogUiState.Loading) load(force = false)
+        viewModelScope.launch {
+            if (section == CatalogSection.HOME) {
+                settingsStore.homeShelfConfig.collect { config ->
+                    homeShelves = HomeShelfLayout.resolve(config)
+                    load(force = false)
+                }
+            } else if (tmdb.value is CatalogUiState.Loading) {
+                load(force = false)
+            }
+        }
     }
 
     fun retry() = load(force = true)
@@ -114,9 +160,11 @@ class CatalogViewModel(
 
     private fun load(force: Boolean) {
         viewModelScope.launch {
-            tmdb.value = CatalogUiState.Loading
+            if (tmdb.value !is CatalogUiState.Ready) {
+                tmdb.value = CatalogUiState.Loading
+            }
             try {
-                tmdb.value = CatalogUiState.Ready(repository.loadCatalog(section, force))
+                tmdb.value = CatalogUiState.Ready(repository.loadCatalog(section, force, homeShelves))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: MissingTmdbKeyException) {
@@ -131,10 +179,11 @@ class CatalogViewModel(
         private val section: CatalogSection,
         private val repository: TmdbRepository,
         private val library: UserLibraryRepository,
+        private val settingsStore: SettingsStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-            CatalogViewModel(section, repository, library) as T
+            CatalogViewModel(section, repository, library, settingsStore) as T
     }
 }
 

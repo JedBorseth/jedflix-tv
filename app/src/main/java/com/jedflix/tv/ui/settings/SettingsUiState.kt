@@ -1,12 +1,17 @@
 package com.jedflix.tv.ui.settings
 
 import androidx.compose.ui.graphics.ImageBitmap
+import com.jedflix.tv.data.tmdb.HomeShelfConfig
+import com.jedflix.tv.data.tmdb.HomeShelfLayout
+import com.jedflix.tv.data.tmdb.HomeShelfPref
 
 data class SettingsUiState(
     val apiKey: String = "",
     val savedApiKey: String = "",
     val dirty: Boolean = false,
     val qrPairing: QrPairingUi = QrPairingUi.Hidden,
+    val homeShelves: List<HomeShelfPref> = HomeShelfLayout.resolve(HomeShelfConfig()),
+    val pickedShelfId: String? = null,
 )
 
 sealed interface QrPairingUi {

@@ -48,6 +48,7 @@ import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.LibraryRows
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
@@ -71,6 +72,7 @@ fun CatalogScreen(
     section: CatalogSection,
     repository: TmdbRepository,
     library: UserLibraryRepository,
+    settingsStore: SettingsStore,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
@@ -79,7 +81,7 @@ fun CatalogScreen(
 ) {
     val viewModel: CatalogViewModel = viewModel(
         key = section.name,
-        factory = CatalogViewModel.Factory(section, repository, library),
+        factory = CatalogViewModel.Factory(section, repository, library, settingsStore),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     val profileFocus = remember { FocusRequester() }
@@ -154,7 +156,9 @@ private fun CatalogContent(
     onTitleFocused: (rowId: String, itemKey: String) -> Unit,
     onShelfItemFocused: (rowId: String, index: Int, itemCount: Int, hasMore: Boolean) -> Unit,
 ) {
-    val fallbackHero = catalog.featured.firstOrNull() ?: catalog.rows.first().items.first()
+    val fallbackHero = catalog.featured.firstOrNull()
+        ?: catalog.rows.firstOrNull()?.items?.firstOrNull()
+        ?: return
     var hero: MediaTitle by remember { mutableStateOf(fallbackHero) }
     var backdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
     val restoreTarget = remember(catalog.rows.map { it.id }) {

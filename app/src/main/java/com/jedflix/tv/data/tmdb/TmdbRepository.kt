@@ -25,12 +25,17 @@ class TmdbRepository(
 
     fun peek(section: CatalogSection): Catalog? = cache[section]
 
-    suspend fun loadCatalog(section: CatalogSection, force: Boolean = false): Catalog {
-        if (!force) cache[section]?.let { return it }
+    suspend fun loadCatalog(
+        section: CatalogSection,
+        force: Boolean = false,
+        homeShelves: List<HomeShelfPref>? = null,
+    ): Catalog {
+        val layout = homeShelves.takeIf { section == CatalogSection.HOME }
+        if (!force && layout == null) cache[section]?.let { return it }
         if (force) {
             CatalogShelves.forSection(section).forEach { shelfCache.remove(it.id) }
         }
-        val catalog = withContext(ioDispatcher) { fetch(section, force) }
+        val catalog = withContext(ioDispatcher) { fetch(section, force, layout) }
         cache[section] = catalog
         return catalog
     }
@@ -93,27 +98,39 @@ class TmdbRepository(
             .toList()
     }
 
-    private suspend fun fetch(section: CatalogSection, force: Boolean): Catalog = coroutineScope {
-        val specs = CatalogShelves.forSection(section)
+    private suspend fun fetch(
+        section: CatalogSection,
+        force: Boolean,
+        homeShelves: List<HomeShelfPref>?,
+    ): Catalog = coroutineScope {
+        val allSpecs = CatalogShelves.forSection(section)
         val billboardId = CatalogShelves.billboardShelfId(section)
+        val fetchIds = homeShelves?.let { HomeShelfLayout.fetchIds(it, billboardId) }
+        val specs = if (fetchIds == null) allSpecs else allSpecs.filter { it.id in fetchIds }
         val deferred = specs.map { spec -> async { spec to runCatching { itemsFor(spec, force) } } }
         val results = deferred.map { it.await() }
+        val fetched = results.associate { (spec, result) -> spec.id to result }
 
-        val rows = results.mapNotNull { (spec, result) ->
-            result.getOrNull()?.takeIf { it.items.isNotEmpty() }?.let { toRow(it, billboardId) }
+        val rowSpecs = if (homeShelves == null) {
+            specs
+        } else {
+            homeShelves.filter { it.visible }.mapNotNull { pref -> allSpecs.find { it.id == pref.id } }
         }
-        if (rows.isEmpty()) {
+        val rows = rowSpecs.mapNotNull { spec ->
+            fetched[spec.id]?.getOrNull()?.takeIf { it.items.isNotEmpty() }?.let { toRow(it, billboardId) }
+        }
+        val hidEverything = homeShelves != null && homeShelves.none { it.visible }
+        if (rows.isEmpty() && !hidEverything) {
             val cause = results.firstNotNullOfOrNull { it.second.exceptionOrNull() }
             throw cause ?: IllegalStateException("TMDB returned no titles")
         }
-        val featured = rows
-            .firstOrNull { it.id == billboardId }
-            ?.items
-            ?.filter { it.backdropUrl != null }
-            ?.take(FEATURED_LIMIT)
-            .orEmpty()
+        val billboardItems = fetched[billboardId]?.getOrNull()?.items.orEmpty()
+        val featured = billboardItems
+            .filter { it.backdropUrl != null }
+            .take(FEATURED_LIMIT)
+            .ifEmpty { billboardItems.take(FEATURED_LIMIT) }
             .ifEmpty {
-                rows.first().items.filter { it.backdropUrl != null }.take(FEATURED_LIMIT)
+                rows.firstOrNull()?.items?.filter { it.backdropUrl != null }?.take(FEATURED_LIMIT).orEmpty()
             }
         Catalog(featured = featured, rows = rows)
     }

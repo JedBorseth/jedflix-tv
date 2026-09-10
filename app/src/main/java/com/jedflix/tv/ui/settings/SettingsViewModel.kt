@@ -11,6 +11,9 @@ import com.jedflix.tv.data.rdpairing.encodeQrBitmap
 import com.jedflix.tv.data.rdpairing.generatePairingCode
 import com.jedflix.tv.data.rdpairing.pairingPageUrl
 import com.jedflix.tv.data.settings.SettingsStore
+import com.jedflix.tv.data.tmdb.HomeShelfConfig
+import com.jedflix.tv.data.tmdb.HomeShelfLayout
+import com.jedflix.tv.data.tmdb.HomeShelfPref
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +48,13 @@ class SettingsViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            store.homeShelfConfig.collect { config ->
+                _state.update { current ->
+                    current.copy(homeShelves = HomeShelfLayout.resolve(config))
+                }
+            }
+        }
     }
 
     fun onApiKeyChange(value: String) {
@@ -70,6 +80,36 @@ class SettingsViewModel(
         pairingJob?.cancel()
         pairingJob = null
         _state.update { it.copy(qrPairing = QrPairingUi.Hidden) }
+    }
+
+    fun toggleHomeShelfVisible(id: String) {
+        persistHomeShelves(HomeShelfLayout.toggleVisible(_state.value.homeShelves, id))
+    }
+
+    fun togglePickHomeShelf(id: String) {
+        _state.update { current ->
+            current.copy(pickedShelfId = if (current.pickedShelfId == id) null else id)
+        }
+    }
+
+    fun dropHomeShelf() {
+        _state.update { it.copy(pickedShelfId = null) }
+    }
+
+    fun movePickedHomeShelf(delta: Int) {
+        val id = _state.value.pickedShelfId ?: return
+        persistHomeShelves(HomeShelfLayout.move(_state.value.homeShelves, id, delta))
+    }
+
+    fun resetHomeShelves() {
+        val defaults = HomeShelfLayout.resolve(HomeShelfConfig())
+        _state.update { it.copy(homeShelves = defaults, pickedShelfId = null) }
+        viewModelScope.launch { store.resetHomeShelfConfig() }
+    }
+
+    private fun persistHomeShelves(next: List<HomeShelfPref>) {
+        _state.update { it.copy(homeShelves = next) }
+        viewModelScope.launch { store.setHomeShelfConfig(HomeShelfLayout.toConfig(next)) }
     }
 
     private suspend fun persist() {

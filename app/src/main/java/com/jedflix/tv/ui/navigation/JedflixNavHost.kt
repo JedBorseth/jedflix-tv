@@ -92,8 +92,8 @@ fun JedflixNavHost(
         }
     }
 
-    fun openSettings() {
-        navController.navigate(Routes.SETTINGS) {
+    fun openSettings(focusKey: Boolean = false) {
+        navController.navigate(Routes.settings(focusKey)) {
             popUpTo(CatalogSection.HOME.route) { inclusive = false }
             launchSingleTop = true
         }
@@ -132,6 +132,7 @@ fun JedflixNavHost(
                         section = section,
                         repository = repository,
                         library = library,
+                        settingsStore = settingsStore,
                         onSectionSelected = { target ->
                             if (target != section) openSection(target)
                         },
@@ -155,11 +156,17 @@ fun JedflixNavHost(
                 )
             }
 
-            composable(Routes.SETTINGS) {
+            composable(
+                route = Routes.SETTINGS,
+                arguments = listOf(
+                    navArgument("focusKey") { type = NavType.BoolType; defaultValue = false },
+                ),
+            ) { entry ->
                 SettingsScreen(
                     settingsStore = settingsStore,
                     library = library,
                     appUpdateManager = appUpdateManager,
+                    focusApiKey = entry.arguments?.getBoolean("focusKey") == true,
                     onSectionSelected = ::openSection,
                     onSearch = ::openSearch,
                 )
@@ -209,7 +216,7 @@ fun JedflixNavHost(
                     playbackSession = playbackSession,
                     library = library,
                     onPlay = { navController.navigate(Routes.PLAYER) },
-                    onOpenSettings = ::openSettings,
+                    onOpenSettings = { openSettings(focusKey = true) },
                     onBack = { navController.popBackStack() },
                 )
             }

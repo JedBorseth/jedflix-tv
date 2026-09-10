@@ -10,6 +10,12 @@
     <string name="nav_settings">Settings</string>
 
     <string name="settings_title">Settings</string>
+    <string name="settings_home_shelves_heading">Home shelves</string>
+    <string name="settings_home_shelves_description">Show, hide, and reorder the catalog shelves on Home. Continue Watching, My List, and Watch History stay at the top.</string>
+    <string name="settings_home_shelves_reset">Reset</string>
+    <string name="settings_home_shelf_hide">Hide %1$s</string>
+    <string name="settings_home_shelf_show">Show %1$s</string>
+
     <string name="settings_rd_heading">Real-Debrid</string>
     <string name="settings_rd_description">Stored on this device. It is sent to Comet (comet.elfhosted.com) only to find and resolve streams, and is never sent to JedFlix servers.</string>
     <string name="settings_rd_key_placeholder">API key</string>

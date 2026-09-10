@@ -179,6 +179,49 @@ class TmdbRepositoryShelvesTest {
         assertTrue(api.maxInFlight.get() >= 2)
     }
 
+    @Test
+    fun homeLayoutSkipsHiddenShelvesButStillFetchesTrending() = runTest {
+        val api = FakeTmdbApi()
+        api.trendingByType["all"] = listOf(media(99, "Trending Hit", "movie"))
+        api.discoverHandler = { page(media(1, "Any")) }
+        api.listPages = mapOf(
+            (JedsPicksLists.MOVIES to 1) to TmdbListResponse(
+                page = 1,
+                itemCount = 1,
+                items = listOf(media(11, "Tenet")),
+            ),
+        )
+        val prefs = HomeShelfLayout.resolve(
+            HomeShelfConfig(hidden = setOf("jeds-movies", "horror", CatalogShelves.TRENDING_HOME)),
+        )
+        val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
+        val catalog = repo.loadCatalog(CatalogSection.HOME, homeShelves = prefs)
+
+        assertTrue(catalog.rows.none { it.id == "jeds-movies" })
+        assertTrue(catalog.rows.none { it.id == "horror" })
+        assertTrue(catalog.rows.none { it.id == CatalogShelves.TRENDING_HOME })
+        assertEquals("Trending Hit", catalog.featured.single().title)
+        assertEquals(listOf("all"), api.trendingCalls)
+        assertTrue(api.listCalls.none { it.first == JedsPicksLists.MOVIES })
+        assertTrue(api.discoverCalls.none { it.genreId == TmdbGenres.MOVIE_HORROR })
+    }
+
+    @Test
+    fun hidingEveryHomeShelfLeavesFeaturedAndNoCatalogRows() = runTest {
+        val api = FakeTmdbApi()
+        api.trendingByType["all"] = listOf(media(99, "Trending Hit", "movie"))
+        val prefs = HomeShelfLayout.resolve(
+            HomeShelfConfig(hidden = HomeShelfLayout.factorySpecs().map { it.id }.toSet()),
+        )
+        val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
+        val catalog = repo.loadCatalog(CatalogSection.HOME, homeShelves = prefs)
+        assertTrue(catalog.rows.isEmpty())
+        assertEquals("Trending Hit", catalog.featured.single().title)
+        assertEquals(listOf("all"), api.trendingCalls)
+        assertTrue(api.listCalls.isEmpty())
+        assertTrue(api.discoverCalls.isEmpty())
+    }
+
     private fun page(vararg items: TmdbMediaDto) = TmdbPagedResponse(page = 1, results = items.toList())
 
     private fun media(id: Int, title: String, type: String = "movie") = TmdbMediaDto(
@@ -211,6 +254,7 @@ private class FakeTmdbApi(
     var discoverHandler: (DiscoverCall) -> TmdbPagedResponse = { TmdbPagedResponse() }
     var listPages: Map<Pair<Int, Int>, TmdbListResponse> = emptyMap()
     val trendingByType = mutableMapOf<String, List<TmdbMediaDto>>()
+    val trendingCalls = CopyOnWriteArrayList<String>()
     val movieLists = mutableMapOf<String, List<TmdbMediaDto>>()
     val tvLists = mutableMapOf<String, List<TmdbMediaDto>>()
 
@@ -222,6 +266,7 @@ private class FakeTmdbApi(
     }
 
     override suspend fun trending(mediaType: String, page: Int): TmdbPagedResponse {
+        trendingCalls += mediaType
         track().use {
             return TmdbPagedResponse(results = if (page == 1) trendingByType[mediaType].orEmpty() else emptyList())
         }

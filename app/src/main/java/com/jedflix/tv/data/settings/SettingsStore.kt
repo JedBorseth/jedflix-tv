@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.jedflix.tv.data.playback.PlayerLanguages
+import com.jedflix.tv.data.tmdb.HomeShelfConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -113,6 +114,27 @@ class SettingsStore(context: Context) {
         }
     }
 
+    val homeShelfConfig: Flow<HomeShelfConfig> = dataStore.data.map { prefs ->
+        HomeShelfConfig(
+            order = prefs[HOME_SHELF_ORDER].csvList(),
+            hidden = prefs[HOME_SHELF_HIDDEN].csvList().toSet(),
+        )
+    }
+
+    suspend fun setHomeShelfConfig(config: HomeShelfConfig) {
+        dataStore.edit { prefs ->
+            prefs[HOME_SHELF_ORDER] = config.order.joinToString(",")
+            prefs[HOME_SHELF_HIDDEN] = config.hidden.joinToString(",")
+        }
+    }
+
+    suspend fun resetHomeShelfConfig() {
+        dataStore.edit { prefs ->
+            prefs.remove(HOME_SHELF_ORDER)
+            prefs.remove(HOME_SHELF_HIDDEN)
+        }
+    }
+
     val playbackPrefs: Flow<PlaybackPrefs> = dataStore.data.map { prefs ->
         PlaybackPrefs(
             audioLanguage = prefs[AUDIO_LANGUAGE] ?: PlayerLanguages.ENGLISH,
@@ -153,5 +175,10 @@ class SettingsStore(context: Context) {
         val UPDATE_APK_NAME = stringPreferencesKey("update_apk_name")
         val UPDATE_APK_SIZE = longPreferencesKey("update_apk_size")
         val UPDATE_DISMISSED_TAG = stringPreferencesKey("update_dismissed_tag")
+        val HOME_SHELF_ORDER = stringPreferencesKey("home_shelf_order")
+        val HOME_SHELF_HIDDEN = stringPreferencesKey("home_shelf_hidden")
     }
 }
+
+private fun String?.csvList(): List<String> =
+    this?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()

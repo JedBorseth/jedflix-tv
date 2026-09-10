@@ -6,6 +6,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -28,15 +32,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -49,9 +57,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.UserLibraryRepository
@@ -60,6 +71,7 @@ import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.update.AppUpdateManager
 import com.jedflix.tv.ui.components.ContentStartPadding
 import com.jedflix.tv.ui.components.JedflixDrawer
+import com.jedflix.tv.ui.components.ProfileAvatarEndClearance
 import com.jedflix.tv.ui.components.RailCollapsedWidth
 import com.jedflix.tv.ui.components.SkeletonBlock
 import com.jedflix.tv.ui.components.rememberShimmerBrush
@@ -69,6 +81,7 @@ import com.jedflix.tv.ui.theme.Zinc800
 import com.jedflix.tv.ui.theme.Zinc900
 import com.jedflix.tv.ui.theme.Zinc950
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     settingsStore: SettingsStore,
@@ -76,14 +89,20 @@ fun SettingsScreen(
     appUpdateManager: AppUpdateManager,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    focusApiKey: Boolean = false,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(settingsStore))
     val state by viewModel.state.collectAsStateWithLifecycle()
     val updateState by appUpdateManager.state.collectAsStateWithLifecycle()
     val fieldFocus = remember { FocusRequester() }
+    val firstShelfFocus = remember { FocusRequester() }
     val qrActionFocus = remember { FocusRequester() }
+    val bringKeyIntoView = remember { BringIntoViewRequester() }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(focusApiKey) {
+        if (focusApiKey) {
+            bringKeyIntoView.bringIntoView()
+        }
         runCatching { fieldFocus.requestFocus() }
     }
 
@@ -93,8 +112,11 @@ fun SettingsScreen(
         }
     }
 
-    BackHandler(enabled = state.qrPairing.isExpanded) {
-        viewModel.cancelQrPairing()
+    BackHandler(enabled = state.pickedShelfId != null || state.qrPairing.isExpanded) {
+        when {
+            state.qrPairing.isExpanded -> viewModel.cancelQrPairing()
+            else -> viewModel.dropHomeShelf()
+        }
     }
 
     JedflixDrawer(
@@ -118,7 +140,7 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .widthIn(max = 900.dp)
-                    .padding(start = ContentStartPadding, end = 48.dp, top = 36.dp, bottom = 48.dp),
+                    .padding(start = ContentStartPadding, end = ProfileAvatarEndClearance, top = 36.dp, bottom = 48.dp),
             ) {
                 Text(
                     text = stringResource(R.string.settings_title),
@@ -150,7 +172,9 @@ fun SettingsScreen(
                     value = state.apiKey,
                     onValueChange = viewModel::onApiKeyChange,
                     onDone = viewModel::save,
-                    modifier = Modifier.focusRequester(fieldFocus),
+                    modifier = Modifier
+                        .focusRequester(fieldFocus)
+                        .bringIntoViewRequester(bringKeyIntoView),
                 )
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -180,6 +204,16 @@ fun SettingsScreen(
                         onCancel = viewModel::cancelQrPairing,
                     )
                 }
+                Spacer(Modifier.height(48.dp))
+                HomeShelvesSection(
+                    shelves = state.homeShelves,
+                    pickedShelfId = state.pickedShelfId,
+                    firstShelfFocus = firstShelfFocus,
+                    onToggleVisible = viewModel::toggleHomeShelfVisible,
+                    onTogglePick = viewModel::togglePickHomeShelf,
+                    onMovePicked = viewModel::movePickedHomeShelf,
+                    onReset = viewModel::resetHomeShelves,
+                )
                 Spacer(Modifier.height(48.dp))
                 AboutUpdateSection(
                     state = updateState,
@@ -311,16 +345,48 @@ private fun ApiKeyField(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .background(Zinc800, RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp)
-            .testTag("settings-rd-key"),
-        verticalAlignment = Alignment.CenterVertically,
+    var editing by remember { mutableStateOf(false) }
+    val textFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val shape = RoundedCornerShape(8.dp)
+
+    LaunchedEffect(editing) {
+        if (editing) {
+            runCatching { textFocus.requestFocus() }
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
+        }
+    }
+
+    BackHandler(enabled = editing) {
+        editing = false
+        onDone()
+    }
+
+    Surface(
+        onClick = { editing = true },
+        modifier = modifier.testTag("settings-rd-key"),
+        shape = ClickableSurfaceDefaults.shape(shape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Zinc800,
+            focusedContainerColor = Zinc800,
+            pressedContainerColor = Zinc800,
+            contentColor = WarmWhite,
+            focusedContentColor = WarmWhite,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f, pressedScale = 1f),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(border = BorderStroke(2.dp, WarmWhite), shape = shape),
+        ),
     ) {
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             if (value.isEmpty()) {
                 Text(
                     text = stringResource(R.string.settings_rd_key_placeholder),
@@ -332,6 +398,7 @@ private fun ApiKeyField(
                 value = value,
                 onValueChange = onValueChange,
                 singleLine = true,
+                readOnly = !editing,
                 visualTransformation = PasswordVisualTransformation(),
                 textStyle = TextStyle(
                     color = WarmWhite,
@@ -343,8 +410,16 @@ private fun ApiKeyField(
                     keyboardType = KeyboardType.Ascii,
                     imeAction = ImeAction.Done,
                 ),
-                keyboardActions = KeyboardActions(onDone = { onDone() }),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        onDone()
+                        editing = false
+                    },
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(textFocus)
+                    .focusProperties { canFocus = editing },
             )
         }
     }

@@ -6,7 +6,9 @@ import com.jedflix.tv.data.tmdb.MediaType
 object Routes {
     const val SPLASH = "splash"
     const val SEARCH = "search"
-    const val SETTINGS = "settings"
+    const val SETTINGS = "settings?focusKey={focusKey}"
+
+    fun settings(focusKey: Boolean = false): String = "settings?focusKey=$focusKey"
     const val DETAIL = "detail/{mediaType}/{id}"
     const val STREAMS = "streams/{mediaType}/{id}?season={season}&episode={episode}"
     const val PLAYER = "player"
