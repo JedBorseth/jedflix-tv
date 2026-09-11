@@ -91,6 +91,12 @@ object JedflixIcons {
             "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z",
         )
     }
+    val ExpandMore: ImageVector by lazy {
+        icon("ExpandMore", "M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z")
+    }
+    val ExpandLess: ImageVector by lazy {
+        icon("ExpandLess", "M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z")
+    }
     val VisibilityOff: ImageVector by lazy {
         icon(
             "VisibilityOff",

@@ -127,7 +127,14 @@ class StreamPickerViewModel(
                 if (apiKey.isBlank()) throw StreamException.MissingKey()
                 val imdbId = details.imdbId ?: throw StreamException.NoImdbId()
 
-                val options = cometClient.fetchStreams(apiKey, mediaType, imdbId, season, episode)
+                val options = cometClient.fetchStreams(
+                    apiKey,
+                    mediaType,
+                    imdbId,
+                    season,
+                    episode,
+                    episodeTitle,
+                )
                 _state.value = StreamPickerUiState.Ready(target = target, options = options)
             } catch (e: CancellationException) {
                 throw e

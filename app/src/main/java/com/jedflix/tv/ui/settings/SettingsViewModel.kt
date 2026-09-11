@@ -10,6 +10,7 @@ import com.jedflix.tv.data.rdpairing.RdKeyPollResult
 import com.jedflix.tv.data.rdpairing.encodeQrBitmap
 import com.jedflix.tv.data.rdpairing.generatePairingCode
 import com.jedflix.tv.data.rdpairing.pairingPageUrl
+import com.jedflix.tv.data.settings.QualityProfile
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.HomeShelfConfig
 import com.jedflix.tv.data.tmdb.HomeShelfLayout
@@ -53,6 +54,11 @@ class SettingsViewModel(
                 _state.update { current ->
                     current.copy(homeShelves = HomeShelfLayout.resolve(config))
                 }
+            }
+        }
+        viewModelScope.launch {
+            store.qualityProfile.collect { profile ->
+                _state.update { it.copy(qualityProfile = profile) }
             }
         }
     }
@@ -105,6 +111,11 @@ class SettingsViewModel(
         val defaults = HomeShelfLayout.resolve(HomeShelfConfig())
         _state.update { it.copy(homeShelves = defaults, pickedShelfId = null) }
         viewModelScope.launch { store.resetHomeShelfConfig() }
+    }
+
+    fun setQualityProfile(profile: QualityProfile) {
+        _state.update { it.copy(qualityProfile = profile) }
+        viewModelScope.launch { store.setQualityProfile(profile) }
     }
 
     private fun persistHomeShelves(next: List<HomeShelfPref>) {

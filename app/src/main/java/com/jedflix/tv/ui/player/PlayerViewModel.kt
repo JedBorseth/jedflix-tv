@@ -554,7 +554,7 @@ class PlayerViewModel(
         val apiKey = settingsStore.realDebridApiKey.first()
         if (apiKey.isBlank()) return null
         val options = runCatching {
-            comet.fetchStreams(apiKey, MediaType.TV, imdbId, ref.season, ref.episode)
+            comet.fetchStreams(apiKey, MediaType.TV, imdbId, ref.season, ref.episode, nextTitle)
         }.getOrNull() ?: return null
         val option = NextStream.pickCachedAtResolution(options, resolution) ?: return null
         val url = runCatching { comet.resolvePlaybackUrl(option.playbackUrl) }.getOrNull() ?: return null

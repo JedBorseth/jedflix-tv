@@ -31,8 +31,15 @@ name: Settings Real-Debrid key
     id: "settings-save"
 - assertVisible:
     id: "settings-rd-qr"
+- scrollUntilVisible:
+    element:
+      id: "settings-quality"
+    direction: DOWN
+    timeout: 15000
 - assertVisible:
-    id: "settings-version"
+    id: "settings-quality"
+- assertVisible:
+    id: "settings-quality-dropdown"
 - scrollUntilVisible:
     element:
       id: "settings-check-update"
@@ -40,3 +47,5 @@ name: Settings Real-Debrid key
     timeout: 15000
 - assertVisible:
     id: "settings-about"
+- assertVisible:
+    id: "settings-version"

@@ -148,13 +148,6 @@ fun SettingsScreen(
                     color = WarmWhite,
                     fontWeight = FontWeight.Black,
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_version, updateState.currentVersion),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Zinc400,
-                    modifier = Modifier.testTag("settings-version"),
-                )
                 Spacer(Modifier.height(36.dp))
                 Text(
                     text = stringResource(R.string.settings_rd_heading),
@@ -213,6 +206,11 @@ fun SettingsScreen(
                     onTogglePick = viewModel::togglePickHomeShelf,
                     onMovePicked = viewModel::movePickedHomeShelf,
                     onReset = viewModel::resetHomeShelves,
+                )
+                Spacer(Modifier.height(48.dp))
+                QualityProfileSection(
+                    selected = state.qualityProfile,
+                    onSelect = viewModel::setQualityProfile,
                 )
                 Spacer(Modifier.height(48.dp))
                 AboutUpdateSection(

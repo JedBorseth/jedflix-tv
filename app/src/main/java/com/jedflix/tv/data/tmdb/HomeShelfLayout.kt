@@ -56,6 +56,23 @@ object HomeShelfLayout {
     fun toggleVisible(prefs: List<HomeShelfPref>, id: String): List<HomeShelfPref> =
         prefs.map { if (it.id == id) it.copy(visible = !it.visible) else it }
 
+    /** How many Home shelves Settings shows before Show all. */
+    const val SETTINGS_PREVIEW_COUNT = 4
+
+    fun settingsList(
+        prefs: List<HomeShelfPref>,
+        expanded: Boolean,
+        previewCount: Int = SETTINGS_PREVIEW_COUNT,
+    ): List<HomeShelfPref> {
+        if (expanded || prefs.size <= previewCount) return prefs
+        return prefs.take(previewCount)
+    }
+
+    fun settingsNeedsShowAll(
+        prefs: List<HomeShelfPref>,
+        previewCount: Int = SETTINGS_PREVIEW_COUNT,
+    ): Boolean = prefs.size > previewCount
+
     fun move(prefs: List<HomeShelfPref>, id: String, delta: Int): List<HomeShelfPref> {
         val index = prefs.indexOfFirst { it.id == id }
         if (index < 0) return prefs

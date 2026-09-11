@@ -3,6 +3,7 @@ package com.jedflix.tv.ui.player
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,6 +33,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -73,13 +75,20 @@ internal fun PlayerChrome(
     onCaptions: () -> Unit,
     onAudio: () -> Unit,
     onNext: () -> Unit,
+    onSurfaceTap: () -> Unit,
 ) {
     val duration = state.durationMs.coerceAtLeast(0L)
     val position = state.positionMs.coerceIn(0L, duration.takeIf { it > 0L } ?: state.positionMs)
     val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
     val remaining = (duration - position).coerceAtLeast(0L)
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures { onSurfaceTap() }
+            },
+    ) {
         TitleOverlay(title = state.item.title, subtitle = state.item.subtitle)
         Column(
             modifier = Modifier
@@ -98,12 +107,6 @@ internal fun PlayerChrome(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ControlButton(
-                    onClick = onSeekBack,
-                    icon = JedflixIcons.Replay10,
-                    label = stringResource(R.string.player_rewind),
-                    modifier = Modifier.testTag("player-rewind"),
-                )
-                ControlButton(
                     onClick = onPlayPause,
                     icon = if (state.isPlaying) JedflixIcons.Pause else JedflixIcons.Play,
                     label = stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
@@ -111,10 +114,18 @@ internal fun PlayerChrome(
                     emphasized = true,
                 )
                 ControlButton(
+                    onClick = onSeekBack,
+                    icon = JedflixIcons.Replay10,
+                    label = stringResource(R.string.player_rewind),
+                    modifier = Modifier.testTag("player-rewind"),
+                    showLabel = false,
+                )
+                ControlButton(
                     onClick = onSeekForward,
                     icon = JedflixIcons.Forward10,
                     label = stringResource(R.string.player_forward),
                     modifier = Modifier.testTag("player-forward"),
+                    showLabel = false,
                 )
                 Spacer(Modifier.weight(1f))
                 ControlButton(
@@ -429,6 +440,7 @@ private fun ControlButton(
     label: String,
     modifier: Modifier = Modifier,
     emphasized: Boolean = false,
+    showLabel: Boolean = true,
 ) {
     Button(
         onClick = onClick,
@@ -440,9 +452,15 @@ private fun ControlButton(
             focusedContentColor = Zinc950,
         ),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label, fontWeight = FontWeight.SemiBold)
+        Icon(
+            icon,
+            contentDescription = if (showLabel) null else label,
+            modifier = Modifier.size(22.dp),
+        )
+        if (showLabel) {
+            Spacer(Modifier.width(8.dp))
+            Text(label, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 

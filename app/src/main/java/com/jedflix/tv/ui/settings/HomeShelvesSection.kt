@@ -17,8 +17,11 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.tmdb.HomeShelfLayout
 import com.jedflix.tv.data.tmdb.HomeShelfPref
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -63,7 +67,21 @@ fun HomeShelvesSection(
     onMovePicked: (Int) -> Unit,
     onReset: () -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
     val resetFocus = remember { FocusRequester() }
+    val showAllFocus = remember { FocusRequester() }
+    val showAllBringIntoView = remember { BringIntoViewRequester() }
+    val listExpanded = expanded || pickedShelfId != null
+    val listed = HomeShelfLayout.settingsList(shelves, listExpanded)
+    val needsShowAll = HomeShelfLayout.settingsNeedsShowAll(shelves)
+
+    LaunchedEffect(expanded, listed.size) {
+        if (!expanded) return@LaunchedEffect
+        withFrameNanos { }
+        withFrameNanos { }
+        showAllBringIntoView.bringIntoView()
+        runCatching { showAllFocus.requestFocus() }
+    }
     Column(modifier = Modifier.testTag("settings-home-shelves")) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -98,7 +116,7 @@ fun HomeShelvesSection(
             color = Zinc400,
         )
         Spacer(Modifier.height(20.dp))
-        shelves.forEachIndexed { index, shelf ->
+        listed.forEachIndexed { index, shelf ->
             key(shelf.id) {
                 HomeShelfRow(
                     shelf = shelf,
@@ -107,11 +125,47 @@ fun HomeShelvesSection(
                     holding = pickedShelfId != null,
                     labelFocus = if (index == 0) firstShelfFocus else null,
                     upFocus = if (index == 0 && pickedShelfId == null) resetFocus else null,
+                    downFocus = if (
+                        index == listed.lastIndex &&
+                        needsShowAll &&
+                        pickedShelfId == null
+                    ) {
+                        showAllFocus
+                    } else {
+                        null
+                    },
                     onToggleVisible = { onToggleVisible(shelf.id) },
                     onTogglePick = { onTogglePick(shelf.id) },
                     onMovePicked = onMovePicked,
                 )
-                if (index != shelves.lastIndex) Spacer(Modifier.height(10.dp))
+                if (index != listed.lastIndex) Spacer(Modifier.height(10.dp))
+            }
+        }
+        if (needsShowAll && pickedShelfId == null) {
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { expanded = !expanded },
+                modifier = Modifier
+                    .bringIntoViewRequester(showAllBringIntoView)
+                    .focusRequester(showAllFocus)
+                    .testTag("settings-home-shelves-show-all"),
+                colors = ButtonDefaults.colors(
+                    containerColor = Color.White.copy(alpha = 0.22f),
+                    contentColor = WarmWhite,
+                    focusedContainerColor = WarmWhite,
+                    focusedContentColor = Zinc950,
+                ),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (expanded) {
+                            R.string.settings_home_shelves_show_less
+                        } else {
+                            R.string.settings_home_shelves_show_all
+                        },
+                    ),
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -126,6 +180,7 @@ private fun HomeShelfRow(
     holding: Boolean,
     labelFocus: FocusRequester?,
     upFocus: FocusRequester?,
+    downFocus: FocusRequester? = null,
     onToggleVisible: () -> Unit,
     onTogglePick: () -> Unit,
     onMovePicked: (Int) -> Unit,
@@ -181,6 +236,7 @@ private fun HomeShelfRow(
                     } else {
                         right = visibleFocus
                         if (upFocus != null) up = upFocus
+                        if (downFocus != null) down = downFocus
                     }
                 },
             shape = ClickableSurfaceDefaults.shape(shape),
@@ -223,6 +279,7 @@ private fun HomeShelfRow(
                     } else {
                         left = labelRequester
                         right = FocusRequester.Cancel
+                        if (downFocus != null) down = downFocus
                     }
                 },
             shape = ClickableSurfaceDefaults.shape(iconShape),

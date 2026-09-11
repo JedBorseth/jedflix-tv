@@ -104,5 +104,25 @@ class HomeShelfLayoutTest {
         assertEquals(19, HomeShelfLayout.factorySpecs().size)
     }
 
+    @Test
+    fun settingsPreviewShowsFirstFourUntilExpanded() {
+        val many = factory + spec("comedy", "Comedy") + spec("scifi", "Sci-Fi")
+        val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), many)
+        assertEquals(
+            listOf("jeds-movies", "crave-movies", CatalogShelves.TRENDING_HOME, "horror"),
+            HomeShelfLayout.settingsList(prefs, expanded = false).map { it.id },
+        )
+        assertEquals(prefs, HomeShelfLayout.settingsList(prefs, expanded = true))
+        assertTrue(HomeShelfLayout.settingsNeedsShowAll(prefs))
+    }
+
+    @Test
+    fun settingsPreviewShowsAllWhenAtMostFour() {
+        val shortFactory = factory.take(3)
+        val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), shortFactory)
+        assertEquals(prefs, HomeShelfLayout.settingsList(prefs, expanded = false))
+        assertFalse(HomeShelfLayout.settingsNeedsShowAll(prefs))
+    }
+
     private fun spec(id: String, title: String) = ShelfSpec.MovieList(id, title, "popular")
 }

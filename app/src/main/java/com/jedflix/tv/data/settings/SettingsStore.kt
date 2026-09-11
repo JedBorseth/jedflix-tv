@@ -135,6 +135,14 @@ class SettingsStore(context: Context) {
         }
     }
 
+    val qualityProfile: Flow<QualityProfile> = dataStore.data.map { prefs ->
+        QualityProfile.fromStored(prefs[QUALITY_PROFILE])
+    }
+
+    suspend fun setQualityProfile(profile: QualityProfile) {
+        dataStore.edit { prefs -> prefs[QUALITY_PROFILE] = profile.stored }
+    }
+
     val playbackPrefs: Flow<PlaybackPrefs> = dataStore.data.map { prefs ->
         PlaybackPrefs(
             audioLanguage = prefs[AUDIO_LANGUAGE] ?: PlayerLanguages.ENGLISH,
@@ -177,6 +185,7 @@ class SettingsStore(context: Context) {
         val UPDATE_DISMISSED_TAG = stringPreferencesKey("update_dismissed_tag")
         val HOME_SHELF_ORDER = stringPreferencesKey("home_shelf_order")
         val HOME_SHELF_HIDDEN = stringPreferencesKey("home_shelf_hidden")
+        val QUALITY_PROFILE = stringPreferencesKey("quality_profile")
     }
 }
 

@@ -41,6 +41,13 @@ fun AboutUpdateSection(
         )
         Spacer(Modifier.height(10.dp))
         Text(
+            text = stringResource(R.string.settings_version, state.currentVersion),
+            style = MaterialTheme.typography.bodyLarge,
+            color = Zinc400,
+            modifier = Modifier.testTag("settings-version"),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
             text = aboutStatus(state),
             style = MaterialTheme.typography.bodyLarge,
             color = Zinc400,

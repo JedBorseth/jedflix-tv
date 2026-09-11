@@ -1,6 +1,7 @@
 package com.jedflix.tv.data.comet
 
 import android.util.Base64
+import com.jedflix.tv.data.playback.EpisodeRef
 import com.jedflix.tv.data.tmdb.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit
  */
 class CometClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
+    private val cinemeta: CinemetaClient = CinemetaClient(),
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -48,13 +50,15 @@ class CometClient(
         imdbId: String,
         season: Int? = null,
         episode: Int? = null,
+        episodeTitle: String? = null,
     ): List<StreamOption> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) throw StreamException.MissingKey()
+        val search = episodeSearch(mediaType, imdbId, season, episode, episodeTitle)
         val config = encodeConfig(apiKey)
         val mediaId = buildString {
             append(imdbId)
-            if (mediaType == MediaType.TV && season != null && episode != null) {
-                append(':').append(season).append(':').append(episode)
+            if (search != null) {
+                append(':').append(search.season).append(':').append(search.episode)
             }
         }
         val type = if (mediaType == MediaType.MOVIE) "movie" else "series"
@@ -74,7 +78,19 @@ class CometClient(
             }
             throw StreamException.NoStreams()
         }
-        options
+        if (search == null) options else SceneEpisode.filterStreams(options, search.season, search.episode)
+    }
+
+    private suspend fun episodeSearch(
+        mediaType: MediaType,
+        imdbId: String,
+        season: Int?,
+        episode: Int?,
+        episodeTitle: String?,
+    ): EpisodeRef? {
+        if (mediaType != MediaType.TV || season == null || episode == null) return null
+        val videos = runCatching { cinemeta.episodes(imdbId) }.getOrNull().orEmpty()
+        return SceneEpisode.searchRef(season, episode, episodeTitle, videos)
     }
 
     /**

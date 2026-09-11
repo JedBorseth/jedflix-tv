@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -15,7 +16,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -26,6 +29,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -131,6 +135,12 @@ fun PlayerScreen(
         seekHintSec = null
     }
 
+    val onSurfaceTap by rememberUpdatedState {
+        if (menu != PlayerMenu.None || state.upNext != null || state.error) return@rememberUpdatedState
+        viewModel.togglePlayPause()
+        showChrome()
+    }
+
     LaunchedEffect(state.error, state.upNext, menu, controlsVisible) {
         val target = when {
             state.error -> return@LaunchedEffect
@@ -139,6 +149,7 @@ fun PlayerScreen(
             controlsVisible -> playFocus
             else -> transportFocus
         }
+        withFrameNanos { }
         runCatching { target.requestFocus() }
     }
 
@@ -212,6 +223,15 @@ fun PlayerScreen(
             onRelease = { view -> view.player = null },
         )
 
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("player-surface")
+                .pointerInput(Unit) {
+                    detectTapGestures { onSurfaceTap() }
+                },
+        )
+
         AnimatedVisibility(
             visible = controlsVisible && !state.error && state.upNext == null,
             enter = fadeIn(),
@@ -239,6 +259,7 @@ fun PlayerScreen(
                     showChrome()
                     viewModel.skipToNext()
                 },
+                onSurfaceTap = { onSurfaceTap() },
             )
         }
 
