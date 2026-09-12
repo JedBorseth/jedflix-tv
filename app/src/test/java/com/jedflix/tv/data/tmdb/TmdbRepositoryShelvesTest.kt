@@ -222,6 +222,21 @@ class TmdbRepositoryShelvesTest {
         assertTrue(api.discoverCalls.isEmpty())
     }
 
+    @Test
+    fun trailerYoutubeKeyIsCachedAndPicksOfficialEnglish() = runTest {
+        val api = FakeTmdbApi()
+        api.videosById["movie" to 10] = TmdbVideosDto(
+            results = listOf(
+                TmdbVideoDto(key = "teaser", site = "YouTube", type = "Teaser", official = true, iso6391 = "en"),
+                TmdbVideoDto(key = "official", site = "YouTube", type = "Trailer", official = true, iso6391 = "en"),
+            ),
+        )
+        val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
+        assertEquals("official", repo.loadTrailerYoutubeKey(MediaType.MOVIE, 10))
+        assertEquals("official", repo.loadTrailerYoutubeKey(MediaType.MOVIE, 10))
+        assertEquals(1, api.videosCalls.size)
+    }
+
     private fun page(vararg items: TmdbMediaDto) = TmdbPagedResponse(page = 1, results = items.toList())
 
     private fun media(id: Int, title: String, type: String = "movie") = TmdbMediaDto(
@@ -257,6 +272,8 @@ private class FakeTmdbApi(
     val trendingCalls = CopyOnWriteArrayList<String>()
     val movieLists = mutableMapOf<String, List<TmdbMediaDto>>()
     val tvLists = mutableMapOf<String, List<TmdbMediaDto>>()
+    val videosById = mutableMapOf<Pair<String, Int>, TmdbVideosDto>()
+    val videosCalls = CopyOnWriteArrayList<Pair<String, Int>>()
 
     private suspend fun track(): CloseablePermit {
         val now = inFlight.incrementAndGet()
@@ -304,6 +321,13 @@ private class FakeTmdbApi(
 
     override suspend fun details(mediaType: String, id: Int, append: String): TmdbDetailsDto {
         error("unused")
+    }
+
+    override suspend fun videos(mediaType: String, id: Int): TmdbVideosDto {
+        videosCalls += mediaType to id
+        track().use {
+            return videosById[mediaType to id] ?: TmdbVideosDto()
+        }
     }
 
     override suspend fun seasonEpisodes(id: Int, season: Int): TmdbSeasonDto {

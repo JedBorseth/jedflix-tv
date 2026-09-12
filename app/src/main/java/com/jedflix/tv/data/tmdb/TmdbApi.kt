@@ -44,6 +44,12 @@ interface TmdbApi {
         @Query("append_to_response") append: String,
     ): TmdbDetailsDto
 
+    @GET("{mediaType}/{id}/videos")
+    suspend fun videos(
+        @Path("mediaType") mediaType: String,
+        @Path("id") id: Int,
+    ): TmdbVideosDto
+
     @GET("tv/{id}/season/{season}")
     suspend fun seasonEpisodes(
         @Path("id") id: Int,

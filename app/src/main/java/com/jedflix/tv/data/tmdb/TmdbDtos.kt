@@ -106,3 +106,18 @@ data class TmdbEpisodeDto(
 data class TmdbSeasonDto(
     val episodes: List<TmdbEpisodeDto> = emptyList(),
 )
+
+@Serializable
+data class TmdbVideosDto(
+    val results: List<TmdbVideoDto> = emptyList(),
+)
+
+@Serializable
+data class TmdbVideoDto(
+    val name: String = "",
+    val key: String = "",
+    val site: String = "",
+    val type: String = "",
+    val official: Boolean = false,
+    @SerialName("iso_639_1") val iso6391: String = "",
+)

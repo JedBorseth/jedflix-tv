@@ -35,3 +35,7 @@ _Avoid_: Watch provider row, OTT category
 **Jed's Picks**:
 Two editorial Shelves, Jed's Movies and Jed's Shows, whose Titles are the live contents of Jed's TMDB lists. Not a CatalogSection.
 _Avoid_: Jed's list, curated category, hardcoded picks
+
+**Trailer preview**:
+A 30s hosted MP4 that morphs open from a focused poster after 5s on a CatalogSection. Identity comes from TMDB videos; bytes come from `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4`. Off when the quality profile is Low.
+_Avoid_: autoplay trailer, YouTube player, hero video (unless describing the billboard destination)

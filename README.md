@@ -44,6 +44,7 @@ Later releases are offered in Settings (**Check for updates**, then **Download a
 # local.properties (gitignored)
 sdk.dir=/Users/you/Library/Android/sdk
 TMDB_API_KEY=your_tmdb_v3_key
+TRAILER_CLIP_BASE_URL=https://your-host/clips
 ```
 
 ```bash

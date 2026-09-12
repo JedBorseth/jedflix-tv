@@ -1,5 +1,6 @@
 package com.jedflix.tv.data.tmdb
 
+import com.jedflix.tv.data.trailer.TrailerPicker
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -19,6 +20,7 @@ class TmdbRepository(
     // Session cache so returning to a section is instant; process death clears it.
     private val cache = ConcurrentHashMap<CatalogSection, Catalog>()
     private val detailsCache = ConcurrentHashMap<String, TitleDetails>()
+    private val trailerCache = ConcurrentHashMap<String, String>()
     private val shelfCache = ConcurrentHashMap<String, CachedShelf>()
     private val inFlight = ConcurrentHashMap<String, Mutex>()
     private val requestPermits = Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -85,6 +87,26 @@ class TmdbRepository(
         withContext(ioDispatcher) {
             throttled { api.seasonEpisodes(showId, seasonNumber) }.episodes.map { it.toTvEpisode() }
         }
+
+    /**
+     * YouTube key for the Title's preferred trailer, or null when TMDB has none.
+     * Empty-string cache entries remember a confirmed miss.
+     */
+    suspend fun loadTrailerYoutubeKey(type: MediaType, id: Int): String? {
+        val key = "${type.apiValue}-$id"
+        trailerCache[key]?.let { return it.ifEmpty { null } }
+        return withContext(ioDispatcher) {
+            try {
+                val dto = throttled { api.videos(type.apiValue, id) }
+                val picked = TrailerPicker.youtubeKey(dto.results)
+                trailerCache[key] = picked.orEmpty()
+                picked
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                null
+            }
+        }
+    }
 
     suspend fun search(query: String): List<MediaTitle> = withContext(ioDispatcher) {
         throttled { api.search(query.trim()) }
