@@ -33,17 +33,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.jedflix.tv.BuildConfig
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.LibraryRows
@@ -53,6 +57,7 @@ import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.data.trailer.TrailerPreviewPhase
 import com.jedflix.tv.ui.components.BillboardBackdrop
 import com.jedflix.tv.ui.components.BillboardInfo
 import com.jedflix.tv.ui.components.CatalogRowView
@@ -83,9 +88,23 @@ fun CatalogScreen(
         key = section.name,
         factory = CatalogViewModel.Factory(section, repository, library, settingsStore),
     )
+    val preview: TrailerPreviewViewModel = viewModel(
+        key = "trailer-preview-${section.name}",
+        factory = TrailerPreviewViewModel.Factory(
+            context = LocalContext.current.applicationContext,
+            tmdb = repository,
+            clipBaseUrl = BuildConfig.TRAILER_CLIP_BASE_URL,
+            settingsStore = settingsStore,
+        ),
+    )
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val previewUi by preview.ui.collectAsStateWithLifecycle()
     val profileFocus = remember { FocusRequester() }
     val contentReturnFocus = remember { FocusRequester() }
+
+    LifecycleStartEffect(preview) {
+        onStopOrDispose { preview.reset() }
+    }
 
     JedflixDrawer(
         selected = section,
@@ -126,6 +145,10 @@ fun CatalogScreen(
                     onBillboardPlayFocused = viewModel::onBillboardPlayFocused,
                     onTitleFocused = viewModel::onTitleFocused,
                     onShelfItemFocused = viewModel::onShelfItemFocused,
+                    previewUi = previewUi,
+                    previewPlayer = preview.player,
+                    onPreviewTitle = preview::onTitleFocused,
+                    onPreviewMorphFinished = preview::onMorphFinished,
                 )
             }
         }
@@ -155,6 +178,10 @@ private fun CatalogContent(
     onBillboardPlayFocused: () -> Unit,
     onTitleFocused: (rowId: String, itemKey: String) -> Unit,
     onShelfItemFocused: (rowId: String, index: Int, itemCount: Int, hasMore: Boolean) -> Unit,
+    previewUi: TrailerPreviewUi,
+    previewPlayer: androidx.media3.exoplayer.ExoPlayer,
+    onPreviewTitle: (MediaTitle) -> Unit,
+    onPreviewMorphFinished: () -> Unit,
 ) {
     val fallbackHero = catalog.featured.firstOrNull()
         ?: catalog.rows.firstOrNull()?.items?.firstOrNull()
@@ -190,6 +217,8 @@ private fun CatalogContent(
                 ?: restoredItemKey.takeIf { it != RailRestore.BILLBOARD_PLAY },
         )
     }
+    var previewOrigin by remember { mutableStateOf<Rect?>(null) }
+    var billboardBounds by remember { mutableStateOf<Rect?>(null) }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -231,11 +260,19 @@ private fun CatalogContent(
         animationSpec = tween(350),
         label = "backdrop-alpha",
     )
+    val coversHero = previewUi.phase == TrailerPreviewPhase.Opening ||
+        previewUi.phase == TrailerPreviewPhase.Playing
+    val infoAlpha by animateFloatAsState(
+        targetValue = if (coversHero) 0f else 1f,
+        animationSpec = tween(250),
+        label = "billboard-info-alpha",
+    )
 
     Box(modifier = Modifier.fillMaxSize().testTag("catalog")) {
         BillboardBackdrop(
             title = backdrop,
             modifier = Modifier.graphicsLayer { alpha = backdropAlpha },
+            onBoundsInWindow = { billboardBounds = it },
         )
         CompositionLocalProvider(LocalBringIntoViewSpec provides NoAutoScrollSpec) {
             LazyColumn(
@@ -259,8 +296,11 @@ private fun CatalogContent(
                             returnPlay = true
                             returnRowId = null
                             returnItemKey = RailRestore.BILLBOARD_PLAY
+                            previewOrigin = billboardBounds
                             onBillboardPlayFocused()
+                            onPreviewTitle(hero)
                         },
+                        modifier = Modifier.graphicsLayer { alpha = infoAlpha },
                     )
                 }
                 itemsIndexed(catalog.rows, key = { _, row -> row.id }) { index, row ->
@@ -279,7 +319,9 @@ private fun CatalogContent(
                                 }
                                 onTitleFocused(row.id, focused.key)
                                 onShelfItemFocused(row.id, itemIndex, row.items.size, row.hasMore)
+                                onPreviewTitle(focused)
                             },
+                            onItemBounds = { previewOrigin = it },
                             onItemClick = { title ->
                                 if (row.id == LibraryRows.CONTINUE_WATCHING) {
                                     continueByKey[title.key]?.let(onContinueWatching)
@@ -309,6 +351,13 @@ private fun CatalogContent(
                 }
             }
         }
+        TrailerPreviewOverlay(
+            ui = previewUi,
+            player = previewPlayer,
+            originInWindow = previewOrigin,
+            destinationInWindow = billboardBounds,
+            onMorphFinished = onPreviewMorphFinished,
+        )
     }
 }
 

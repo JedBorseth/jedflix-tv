@@ -16,6 +16,10 @@ val tmdbApiKey: String =
     localProperties.getProperty("TMDB_API_KEY")?.takeIf { it.isNotBlank() }
         ?: System.getenv("TMDB_API_KEY")
         ?: ""
+val trailerClipBaseUrl: String =
+    localProperties.getProperty("TRAILER_CLIP_BASE_URL")?.takeIf { it.isNotBlank() }
+        ?: System.getenv("TRAILER_CLIP_BASE_URL")
+        ?: ""
 
 android {
     namespace = "com.jedflix.tv"
@@ -31,6 +35,7 @@ android {
         versionName = "0.5.0"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
+        buildConfigField("String", "TRAILER_CLIP_BASE_URL", "\"$trailerClipBaseUrl\"")
     }
 
     signingConfigs {

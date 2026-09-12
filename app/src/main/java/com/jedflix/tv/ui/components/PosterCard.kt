@@ -9,12 +9,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -42,16 +49,33 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     progress: Float? = null,
     onFocused: (() -> Unit)? = null,
+    onFocusedBounds: ((Rect) -> Unit)? = null,
     onClick: () -> Unit = {},
 ) {
     val placeholder = ColorPainter(Zinc800)
+    var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
         modifier = modifier
             .width(PosterWidth)
             .height(PosterHeight)
             .testTag("poster-card")
-            .onFocusChanged { if (it.isFocused) onFocused?.invoke() },
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused?.invoke()
+            }
+            .onGloballyPositioned { coords ->
+                if (!focused) return@onGloballyPositioned
+                val topLeft = coords.positionInWindow()
+                onFocusedBounds?.invoke(
+                    Rect(
+                        topLeft.x,
+                        topLeft.y,
+                        topLeft.x + coords.size.width,
+                        topLeft.y + coords.size.height,
+                    ),
+                )
+            },
         shape = ClickableSurfaceDefaults.shape(shape = PosterShape),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Zinc800,

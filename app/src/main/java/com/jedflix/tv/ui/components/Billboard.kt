@@ -25,6 +25,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -53,11 +56,32 @@ val BillboardInfoHeight = 280.dp
 
 /** Full-bleed backdrop pinned behind the catalog, faded into the background on the left/bottom. */
 @Composable
-fun BillboardBackdrop(title: MediaTitle?, modifier: Modifier = Modifier) {
+fun BillboardBackdrop(
+    title: MediaTitle?,
+    modifier: Modifier = Modifier,
+    onBoundsInWindow: ((Rect) -> Unit)? = null,
+) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.68f),
+            .fillMaxHeight(0.68f)
+            .then(
+                if (onBoundsInWindow == null) {
+                    Modifier
+                } else {
+                    Modifier.onGloballyPositioned { coords ->
+                        val topLeft = coords.positionInWindow()
+                        onBoundsInWindow(
+                            Rect(
+                                topLeft.x,
+                                topLeft.y,
+                                topLeft.x + coords.size.width,
+                                topLeft.y + coords.size.height,
+                            ),
+                        )
+                    }
+                },
+            ),
     ) {
         Crossfade(
             targetState = title?.backdropUrl,
