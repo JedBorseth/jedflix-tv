@@ -31,7 +31,7 @@ private fun startSplashSting(context: Context): MediaPlayer {
         setAudioAttributes(attrs)
         setDataSource(fd.fileDescriptor, fd.startOffset, fd.length)
         fd.close()
-        setVolume(1f, 1f)
+        setVolume(0.22f, 0.22f)
         setOnErrorListener { _, _, _ -> true }
         prepare()
         start()

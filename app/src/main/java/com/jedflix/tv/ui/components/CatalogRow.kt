@@ -99,6 +99,7 @@ fun CatalogRowView(
                     },
                     expanded = expanded,
                     playing = previewing && previewPhase == TrailerPreviewPhase.Playing,
+                    ended = previewing && previewPhase == TrailerPreviewPhase.Ended,
                     logoUrl = previewLogoUrl.takeIf { previewing },
                     onPreviewOpened = onPreviewOpened,
                     modifier = Modifier

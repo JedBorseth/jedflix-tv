@@ -116,6 +116,13 @@ class TrailerPreviewStateTest {
     }
 
     @Test
+    fun prepareWaitsOneSecondThenHoldAtFive() {
+        assertEquals(1_000L, TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS)
+        assertEquals(5_000L, TRAILER_PREVIEW_HOLD_MS)
+        assertTrue(TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS < TRAILER_PREVIEW_HOLD_MS)
+    }
+
+    @Test
     fun playerFailureHidesWithoutOpening() {
         var state = TrailerPreviewState().reduce(TrailerPreviewEvent.Focused("movie-1"))
         state = state.reduce(TrailerPreviewEvent.ClipReady("movie-1", CLIP))

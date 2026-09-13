@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +45,7 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Glow
+import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -54,6 +57,7 @@ import com.jedflix.tv.data.tmdb.tmdbImageUrlAtSize
 import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_MORPH_MS
 import com.jedflix.tv.ui.images.LocalBrowseQuality
 import com.jedflix.tv.ui.images.fitDp
+import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.JedflixRed
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc800
@@ -82,6 +86,7 @@ fun PosterCard(
     previewPlayer: ExoPlayer? = null,
     expanded: Boolean = false,
     playing: Boolean = false,
+    ended: Boolean = false,
     logoUrl: String? = null,
     onPreviewOpened: () -> Unit = {},
     onFocused: (() -> Unit)? = null,
@@ -169,6 +174,9 @@ fun PosterCard(
             if (playing) {
                 PreviewWatermark(logoUrl = logoUrl)
             }
+            if (ended) {
+                EndedPlayHint()
+            }
             if (progress != null && progress > 0f && !playing) {
                 Box(
                     modifier = Modifier
@@ -215,6 +223,27 @@ private fun BoxScope.PreviewWatermark(logoUrl: String?) {
             modifier = watermark
                 .height(28.dp)
                 .width(28.dp),
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.EndedPlayHint() {
+    Box(
+        modifier = Modifier
+            .align(Alignment.Center)
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = JedflixIcons.Play,
+            contentDescription = null,
+            tint = WarmWhite,
+            modifier = Modifier
+                .size(28.dp)
+                .padding(start = 3.dp),
         )
     }
 }

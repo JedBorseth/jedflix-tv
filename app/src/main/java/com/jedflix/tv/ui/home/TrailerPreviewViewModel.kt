@@ -20,7 +20,9 @@ import com.jedflix.tv.data.settings.QualityProfile
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_HOLD_MS
 import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_MORPH_MS
+import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS
 import com.jedflix.tv.data.trailer.TrailerClipUrls
 import com.jedflix.tv.data.trailer.TrailerPreviewEvent
 import com.jedflix.tv.data.trailer.TrailerPreviewPhase
@@ -58,6 +60,7 @@ class TrailerPreviewViewModel(
     private var quality: QualityProfile = QualityProfile.Max
     private var holdJob: Job? = null
     private var resolveJob: Job? = null
+    private var clipAttached = false
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -101,7 +104,7 @@ class TrailerPreviewViewModel(
         dispatch(TrailerPreviewEvent.Focused(title.key))
         if (keepGoing) return
         stopPlayer()
-        startPrepare(title)
+        startHoldAndPrepare(title)
     }
 
     fun onMorphFinished() {
@@ -128,16 +131,18 @@ class TrailerPreviewViewModel(
         super.onCleared()
     }
 
-    private fun startPrepare(title: MediaTitle) {
+    private fun startHoldAndPrepare(title: MediaTitle) {
         holdJob?.cancel()
         resolveJob?.cancel()
         holdJob = viewModelScope.launch {
-            delay(HOLD_MS)
+            delay(TRAILER_PREVIEW_HOLD_MS)
             dispatch(TrailerPreviewEvent.HoldElapsed)
             delay(READY_GRACE_MS)
             dispatch(TrailerPreviewEvent.HoldExpiredUnready)
         }
         resolveJob = viewModelScope.launch {
+            delay(TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS)
+            if (machine.titleKey != title.key || machine.phase == TrailerPreviewPhase.Hidden) return@launch
             launch {
                 val logo = tmdb.loadTitleLogoUrl(title.mediaType, title.id)
                 if (machine.titleKey != title.key) return@launch
@@ -161,6 +166,7 @@ class TrailerPreviewViewModel(
     }
 
     private fun attachClip(url: String) {
+        clipAttached = true
         player.playWhenReady = false
         player.setMediaItem(
             MediaItem.Builder()
@@ -176,6 +182,8 @@ class TrailerPreviewViewModel(
     }
 
     private fun stopPlayer() {
+        if (!clipAttached) return
+        clipAttached = false
         player.playWhenReady = false
         player.stop()
         player.clearMediaItems()
@@ -209,7 +217,8 @@ class TrailerPreviewViewModel(
     }
 
     companion object {
-        const val HOLD_MS = 5_000L
+        const val HOLD_MS = TRAILER_PREVIEW_HOLD_MS
+        const val PREPARE_DEBOUNCE_MS = TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS
         const val READY_GRACE_MS = 2_000L
         const val MORPH_MS = TRAILER_PREVIEW_MORPH_MS
         private const val CLIP_END_MS = 30_000L

@@ -17,6 +17,8 @@ val TrailerPreviewPhase.attachesPlayer: Boolean
     get() = this == TrailerPreviewPhase.Opening || this == TrailerPreviewPhase.Playing
 
 const val TRAILER_PREVIEW_MORPH_MS = 450
+const val TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS = 1_000L
+const val TRAILER_PREVIEW_HOLD_MS = 5_000L
 
 data class TrailerPreviewState(
     val titleKey: String? = null,

@@ -37,5 +37,5 @@ Two editorial Shelves, Jed's Movies and Jed's Shows, whose Titles are the live c
 _Avoid_: Jed's list, curated category, hardcoded picks
 
 **Trailer preview**:
-A 30s hosted MP4 that morphs open from a focused poster after 5s on a CatalogSection. Identity comes from TMDB videos; bytes come from `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4`. When the clip ends the card stays 16:9 on the poster until focus leaves. Off when the quality profile is Low.
+A 30s hosted MP4 that morphs open from a focused poster after 5s on a CatalogSection. Clip prepare waits 1s after focus. Identity comes from TMDB videos; bytes come from `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4`. When the clip ends the card stays 16:9 on the poster with a play icon until focus leaves. Off when the quality profile is Low.
 _Avoid_: autoplay trailer, YouTube player, hero video (unless describing the billboard destination)
