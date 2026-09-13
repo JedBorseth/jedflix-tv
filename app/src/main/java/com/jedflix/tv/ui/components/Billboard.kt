@@ -1,6 +1,14 @@
 package com.jedflix.tv.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,24 +21,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -67,12 +78,17 @@ val BillboardInfoHeight = 280.dp
 fun BillboardBackdrop(
     title: MediaTitle?,
     modifier: Modifier = Modifier,
+    pan: Boolean = false,
+    panActive: Boolean = true,
+    panGeneration: Int = 0,
+    onPanFinished: (() -> Unit)? = null,
     onBoundsInWindow: ((Rect) -> Unit)? = null,
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .fillMaxHeight(0.68f)
+            .clipToBounds()
             .then(
                 if (onBoundsInWindow == null) {
                     Modifier
@@ -91,30 +107,27 @@ fun BillboardBackdrop(
                 },
             ),
     ) {
-        var layoutPx by remember { mutableStateOf(IntSize.Zero) }
-        val backdropUrl = tmdbImageUrlAtSize(
-            title?.backdropUrl,
-            tmdbBrowseBackdropSize(LocalBrowseQuality.current),
-        )
-        if (backdropUrl != null) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(backdropUrl)
-                    .fitPixels(
-                        if (layoutPx.width > 0) layoutPx.width else 1920,
-                        if (layoutPx.height > 0) layoutPx.height else 800,
-                    )
-                    .crossfade(true)
-                    .build(),
-                contentDescription = title?.let { stringResource(R.string.cd_backdrop, it.title) },
-                contentScale = ContentScale.Crop,
-                alignment = Alignment.Center,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onSizeChanged { layoutPx = it },
-            )
+        if (pan) {
+            AnimatedContent(
+                targetState = title,
+                transitionSpec = {
+                    fadeIn(tween(BillboardCycle.FADE_MS)) togetherWith
+                        fadeOut(tween(BillboardCycle.FADE_MS))
+                },
+                contentKey = { it?.key },
+                label = "billboard-backdrop",
+                modifier = Modifier.fillMaxSize(),
+            ) { current ->
+                BillboardStill(
+                    title = current,
+                    pan = true,
+                    panActive = panActive,
+                    panGeneration = panGeneration,
+                    onPanFinished = onPanFinished,
+                )
+            }
         } else {
-            Box(Modifier.fillMaxSize().background(Zinc950))
+            BillboardStill(title = title, pan = false)
         }
         // Left fade keeps the title readable; bottom fade lets rows scroll over the image.
         Box(
@@ -139,6 +152,70 @@ fun BillboardBackdrop(
                     ),
                 ),
         )
+    }
+}
+
+@Composable
+private fun BillboardStill(
+    title: MediaTitle?,
+    pan: Boolean,
+    panActive: Boolean = true,
+    panGeneration: Int = 0,
+    onPanFinished: (() -> Unit)? = null,
+) {
+    var layoutPx by remember { mutableStateOf(IntSize.Zero) }
+    val panOffset = remember { Animatable(0f) }
+    val onFinished by rememberUpdatedState(onPanFinished)
+    var lastKey by remember { mutableStateOf(title?.key) }
+    LaunchedEffect(title?.key, panGeneration, pan, panActive) {
+        if (title?.key != lastKey) {
+            panOffset.snapTo(0f)
+            lastKey = title?.key
+        }
+        if (!pan || !panActive || title == null) return@LaunchedEffect
+        val target = if (panOffset.value < 0.5f) 1f else 0f
+        val distance = kotlin.math.abs(target - panOffset.value)
+        val duration = (BillboardCycle.PAN_MS * distance).toInt()
+        if (duration > 0) {
+            panOffset.animateTo(target, tween(duration, easing = LinearEasing))
+        }
+        onFinished?.invoke()
+    }
+    val backdropUrl = tmdbImageUrlAtSize(
+        title?.backdropUrl,
+        tmdbBrowseBackdropSize(LocalBrowseQuality.current),
+    )
+    if (backdropUrl != null) {
+        val scale = if (pan) BillboardCycle.PAN_SCALE else 1f
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(backdropUrl)
+                .fitPixels(
+                    ((if (layoutPx.width > 0) layoutPx.width else 1920) * scale).toInt(),
+                    ((if (layoutPx.height > 0) layoutPx.height else 800) * scale).toInt(),
+                )
+                .crossfade(true)
+                .build(),
+            contentDescription = title?.let { stringResource(R.string.cd_backdrop, it.title) },
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { layoutPx = it }
+                .then(
+                    if (pan) {
+                        Modifier.graphicsLayer {
+                            scaleX = BillboardCycle.PAN_SCALE
+                            scaleY = BillboardCycle.PAN_SCALE
+                            translationX = BillboardCycle.translationX(size.width, panOffset.value)
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
+    } else {
+        Box(Modifier.fillMaxSize().background(Zinc950))
     }
 }
 
@@ -175,29 +252,42 @@ fun BillboardInfo(
             ),
         verticalArrangement = Arrangement.Bottom,
     ) {
-        Text(
-            text = title.title,
-            style = MaterialTheme.typography.displayMedium,
-            color = WarmWhite,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = title.metaLine(),
-            style = MaterialTheme.typography.titleMedium,
-            color = Zinc300,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = title.overview,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Zinc300,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
+        AnimatedContent(
+            targetState = title,
+            transitionSpec = {
+                fadeIn(tween(BillboardCycle.FADE_MS)) togetherWith
+                    fadeOut(tween(BillboardCycle.FADE_MS))
+            },
+            contentKey = { it.key },
+            label = "billboard-info",
+            contentAlignment = Alignment.BottomStart,
+        ) { current ->
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = current.title,
+                    style = MaterialTheme.typography.displayMedium,
+                    color = WarmWhite,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = current.metaLine(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Zinc300,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = current.overview,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Zinc300,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BillboardButton(

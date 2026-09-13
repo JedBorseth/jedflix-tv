@@ -22,6 +22,7 @@ const val TRAILER_PREVIEW_HOLD_MS = 5_000L
 
 data class TrailerPreviewState(
     val titleKey: String? = null,
+    val rowId: String? = null,
     val clipUrl: String? = null,
     val holdElapsed: Boolean = false,
     val playerReady: Boolean = false,
@@ -29,10 +30,13 @@ data class TrailerPreviewState(
     val phase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
 ) {
     val visible: Boolean get() = phase.visible
+
+    fun appliesTo(rowId: String, titleKey: String): Boolean =
+        this.rowId == rowId && this.titleKey == titleKey && phase != TrailerPreviewPhase.Hidden
 }
 
 sealed interface TrailerPreviewEvent {
-    data class Focused(val titleKey: String) : TrailerPreviewEvent
+    data class Focused(val titleKey: String, val rowId: String) : TrailerPreviewEvent
     data object HoldElapsed : TrailerPreviewEvent
     data class ClipReady(val titleKey: String, val url: String) : TrailerPreviewEvent
     data class PlayerReady(val titleKey: String) : TrailerPreviewEvent
@@ -45,10 +49,14 @@ sealed interface TrailerPreviewEvent {
 
 fun TrailerPreviewState.reduce(event: TrailerPreviewEvent): TrailerPreviewState = when (event) {
     is TrailerPreviewEvent.Focused -> {
-        if (event.titleKey == titleKey && !failed && phase != TrailerPreviewPhase.Hidden) {
+        if (event.titleKey == titleKey && event.rowId == rowId && !failed && phase != TrailerPreviewPhase.Hidden) {
             this
         } else {
-            TrailerPreviewState(titleKey = event.titleKey, phase = TrailerPreviewPhase.Preparing)
+            TrailerPreviewState(
+                titleKey = event.titleKey,
+                rowId = event.rowId,
+                phase = TrailerPreviewPhase.Preparing,
+            )
         }
     }
     TrailerPreviewEvent.HoldElapsed -> {

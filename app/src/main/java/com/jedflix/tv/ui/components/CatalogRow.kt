@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -56,6 +57,7 @@ fun CatalogRowView(
     downFocusRequester: FocusRequester? = null,
     stateKey: String = row.id,
     previewTitleKey: String? = null,
+    previewRowId: String? = null,
     previewPhase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
     previewPlayer: ExoPlayer? = null,
     previewLogoUrl: String? = null,
@@ -68,7 +70,7 @@ fun CatalogRowView(
         else -> row.title
     }
     val enter = enterFocusRequester ?: remember(row.id) { FocusRequester() }
-    var lastKey by remember(row.id) { mutableStateOf(restoredItemKey) }
+    var lastKey by rememberSaveable(row.id) { mutableStateOf(restoredItemKey) }
     val enterKey = RailRestore.itemKey(lastKey, row.items.map { it.key })
     val listState = rememberRailListState(stateKey)
 
@@ -89,6 +91,7 @@ fun CatalogRowView(
         ) {
             itemsIndexed(row.items, key = { _, item -> item.key }) { index, item ->
                 val previewing = item.key == previewTitleKey &&
+                    row.id == previewRowId &&
                     previewPhase != TrailerPreviewPhase.Hidden
                 val expanded = previewing && previewPhase.visible
                 PosterCard(

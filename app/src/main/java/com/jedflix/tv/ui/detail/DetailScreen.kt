@@ -34,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -73,6 +72,7 @@ import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.playback.ShowPlay
 import com.jedflix.tv.data.tmdb.CastMember
 import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.MediaTitle
@@ -105,7 +105,6 @@ import com.jedflix.tv.ui.theme.Zinc400
 import com.jedflix.tv.ui.theme.Zinc800
 import com.jedflix.tv.ui.theme.Zinc950
 import java.util.Locale
-import kotlinx.coroutines.launch
 
 @Composable
 fun DetailScreen(
@@ -116,6 +115,7 @@ fun DetailScreen(
     onTitleClick: (MediaTitle) -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onPlayEpisode: (season: Int, episode: Int) -> Unit,
+    startingPlayback: Boolean = false,
 ) {
     val viewModel: DetailViewModel = viewModel(
         key = "${mediaType.apiValue}-$mediaId",
@@ -151,6 +151,7 @@ fun DetailScreen(
                         onTitleClick = onTitleClick,
                         onPlay = onPlay,
                         onPlayEpisode = onPlayEpisode,
+                        startingPlayback = startingPlayback,
                     )
                 }
             }
@@ -172,6 +173,7 @@ private fun DetailContent(
     onTitleClick: (MediaTitle) -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onPlayEpisode: (season: Int, episode: Int) -> Unit,
+    startingPlayback: Boolean,
 ) {
     val details = state.details
     val playFocus = remember { FocusRequester() }
@@ -181,7 +183,6 @@ private fun DetailContent(
     val episodeEnter = remember { FocusRequester() }
     val similarEnter = remember { FocusRequester() }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val rowScrollSpec = LocalBringIntoViewSpec.current
     val pinSpace = LocalConfiguration.current.screenHeightDp.dp * 0.62f
     val hasCast = details.cast.isNotEmpty()
@@ -197,6 +198,8 @@ private fun DetailContent(
         DetailRail.SIMILAR -> similarIndex
     }
     var focusedSection by remember(details.title.key) { mutableIntStateOf(initialSection) }
+    var browseEpisode by remember { mutableStateOf<Int?>(null) }
+    var browseNonce by remember { mutableIntStateOf(0) }
 
     DisposableEffect(details.title.key) {
         viewModel.beginRestore()
@@ -217,11 +220,18 @@ private fun DetailContent(
     }
 
     LaunchedEffect(focusedSection) {
+        if (browseEpisode != null) return@LaunchedEffect
         if (focusedSection == 0) {
             listState.animateScrollToItem(0)
         } else {
             listState.animateScrollToItem(focusedSection)
         }
+    }
+
+    LaunchedEffect(browseNonce) {
+        if (browseNonce == 0) return@LaunchedEffect
+        listState.scrollToItem(episodesIndex)
+        focusedSection = episodesIndex
     }
 
     Box(modifier = Modifier.fillMaxSize().testTag("detail")) {
@@ -240,17 +250,14 @@ private fun DetailContent(
                         resume = state.resume,
                         playFocusRequester = playFocus,
                         downFocusRequester = null,
+                        startingPlayback = startingPlayback,
                         onPlay = onPlay,
                         onToggleMyList = { viewModel.toggleMyList(details.title) },
                         onBrowseEpisodes = {
+                            viewModel.browseEpisodes()
+                            browseEpisode = ShowPlay.BROWSE_EPISODE
+                            browseNonce += 1
                             focusedSection = episodesIndex
-                            viewModel.onEpisodeFocused(
-                                RailRestore.itemKey(null, state.episodes.map { it.episodeNumber }) ?: 1,
-                            )
-                            scope.launch {
-                                listState.animateScrollToItem(episodesIndex)
-                                runCatching { episodesFocus.requestFocus() }
-                            }
                         },
                         modifier = Modifier
                             .focusGroup()
@@ -298,6 +305,9 @@ private fun DetailContent(
                                 onSelectSeason = viewModel::selectSeason,
                                 onSeasonFocused = viewModel::onSeasonFocused,
                                 onEpisodeFocused = viewModel::onEpisodeFocused,
+                                browseEpisode = browseEpisode,
+                                browseNonce = browseNonce,
+                                onBrowseConsumed = { browseEpisode = null },
                                 onPlayEpisode = { episode ->
                                     state.selectedSeason?.let { season -> onPlayEpisode(season, episode.episodeNumber) }
                                 },
@@ -345,6 +355,7 @@ private fun DetailHero(
     resume: LibraryItem?,
     playFocusRequester: FocusRequester,
     downFocusRequester: FocusRequester?,
+    startingPlayback: Boolean,
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onToggleMyList: () -> Unit,
     onBrowseEpisodes: () -> Unit,
@@ -411,36 +422,42 @@ private fun DetailHero(
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (title.mediaType == MediaType.TV) {
-                    if (resume != null) {
-                        ActionButton(
-                            label = stringResource(R.string.action_resume),
-                            icon = JedflixIcons.Play,
-                            filled = true,
-                            modifier = Modifier
-                                .focusRequester(playFocusRequester)
-                                .testTag("detail-play")
-                                .railItemFocus(down = downFocusRequester),
-                            onClick = { onPlay(resume.season, resume.episode) },
-                        )
-                    }
+                    val (playSeason, playEpisode) = ShowPlay.play(resume?.season, resume?.episode)
+                    ActionButton(
+                        label = stringResource(
+                            if (startingPlayback) R.string.action_starting else R.string.action_play,
+                        ),
+                        icon = JedflixIcons.Play,
+                        filled = true,
+                        enabled = !startingPlayback,
+                        modifier = Modifier
+                            .focusRequester(playFocusRequester)
+                            .testTag("detail-play")
+                            .railItemFocus(down = downFocusRequester),
+                        onClick = { onPlay(playSeason, playEpisode) },
+                    )
                     ActionButton(
                         label = stringResource(R.string.action_browse_episodes),
                         icon = JedflixIcons.Play,
-                        filled = resume == null,
-                        modifier = if (resume == null) {
-                            Modifier.focusRequester(playFocusRequester).railItemFocus(down = downFocusRequester)
-                        } else {
-                            Modifier.railItemFocus(down = downFocusRequester)
-                        },
+                        filled = false,
+                        enabled = !startingPlayback,
+                        modifier = Modifier
+                            .testTag("detail-browse-episodes")
+                            .railItemFocus(down = downFocusRequester),
                         onClick = onBrowseEpisodes,
                     )
                 } else {
                     ActionButton(
                         label = stringResource(
-                            if (resume != null) R.string.action_resume else R.string.action_play,
+                            when {
+                                startingPlayback -> R.string.action_starting
+                                resume != null -> R.string.action_resume
+                                else -> R.string.action_play
+                            },
                         ),
                         icon = JedflixIcons.Play,
                         filled = true,
+                        enabled = !startingPlayback,
                         modifier = Modifier
                             .focusRequester(playFocusRequester)
                             .testTag("detail-play")
@@ -468,11 +485,13 @@ private fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     filled: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
         modifier = modifier,
+        enabled = enabled,
         colors = ButtonDefaults.colors(
             containerColor = if (filled) WarmWhite else Color.White.copy(alpha = 0.22f),
             contentColor = if (filled) Zinc950 else WarmWhite,
@@ -605,15 +624,40 @@ private fun EpisodeSection(
     onSelectSeason: (Int) -> Unit,
     onSeasonFocused: (Int) -> Unit,
     onEpisodeFocused: (Int) -> Unit,
+    browseEpisode: Int?,
+    browseNonce: Int,
+    onBrowseConsumed: () -> Unit,
     onPlayEpisode: (TvEpisode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var lastSeason by remember { mutableStateOf(restoredSeason) }
     var lastEpisode by remember(selectedSeason) { mutableStateOf(restoredEpisode) }
     val enterSeason = RailRestore.itemKey(lastSeason, seasons.map { it.seasonNumber })
-    val enterEpisode = RailRestore.itemKey(lastEpisode, episodes.map { it.episodeNumber })
+    val enterEpisode = RailRestore.itemKey(
+        browseEpisode ?: lastEpisode ?: restoredEpisode,
+        episodes.map { it.episodeNumber },
+    )
     val seasonState = rememberRailListState("seasons")
     val episodeState = rememberRailListState("episodes-$selectedSeason")
+    val browseFocus = remember { FocusRequester() }
+
+    LaunchedEffect(browseNonce, browseEpisode, loading, selectedSeason, episodes) {
+        val target = browseEpisode ?: return@LaunchedEffect
+        if (loading) return@LaunchedEffect
+        val index = episodes.indexOfFirst { it.episodeNumber == target }.takeIf { it >= 0 }
+            ?: episodes.indexOfFirst { it.episodeNumber > 0 }.takeIf { it >= 0 }
+            ?: run {
+                onBrowseConsumed()
+                return@LaunchedEffect
+            }
+        lastEpisode = episodes[index].episodeNumber
+        episodeState.scrollToItem(index)
+        for (i in 0 until 8) {
+            withFrameNanos { }
+            if (runCatching { browseFocus.requestFocus() }.getOrDefault(false)) break
+        }
+        onBrowseConsumed()
+    }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -679,6 +723,13 @@ private fun EpisodeSection(
                         modifier = Modifier
                             .optionalFocusRequester(if (index == 0) firstEpisodeFocus else null)
                             .optionalFocusRequester(if (episode.episodeNumber == enterEpisode) episodeEnter else null)
+                            .optionalFocusRequester(
+                                if (browseEpisode != null && episode.episodeNumber == enterEpisode) {
+                                    browseFocus
+                                } else {
+                                    null
+                                },
+                            )
                             .railItemFocus(
                                 up = seasonEnter,
                                 down = downFromEpisodes,

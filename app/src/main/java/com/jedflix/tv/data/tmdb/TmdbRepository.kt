@@ -155,11 +155,13 @@ class TmdbRepository(
         val results = deferred.map { it.await() }
         val fetched = results.associate { (spec, result) -> spec.id to result }
 
-        val rowSpecs = if (homeShelves == null) {
+        val configured = if (homeShelves == null) {
             specs
         } else {
             homeShelves.filter { it.visible }.mapNotNull { pref -> allSpecs.find { it.id == pref.id } }
         }
+        val trendingSpec = allSpecs.firstOrNull { it.id == CatalogShelves.TRENDING_HOME }
+        val rowSpecs = listOfNotNull(trendingSpec) + configured.filter { it.id != CatalogShelves.TRENDING_HOME }
         val rows = rowSpecs.mapNotNull { spec ->
             fetched[spec.id]?.getOrNull()?.takeIf { it.items.isNotEmpty() }?.let { toRow(it, billboardId) }
         }

@@ -23,9 +23,9 @@ import com.jedflix.tv.data.library.PlaybackProgress
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.AudioFormatLabel
 import com.jedflix.tv.data.playback.AudioTrackOption
+import com.jedflix.tv.data.playback.AutoStream
 import com.jedflix.tv.data.playback.EpisodeRef
 import com.jedflix.tv.data.playback.NextEpisode
-import com.jedflix.tv.data.playback.NextStream
 import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.playback.PlayerAudioSelection
@@ -95,11 +95,15 @@ class PlayerViewModel(
     private var outroPromptConsumed = false
     private var handlingEnded = false
     private var audioFallbackAttempted = false
+    private var fallbackJob: Job? = null
+    private var awaitingFallback = false
 
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             countdownJob?.cancel()
             prefetchJob?.cancel()
+            if (awaitingFallback) return
+            if (tryFallback()) return
             _state.value = _state.value.copy(error = true, upNext = null, skip = null, isPlaying = false)
             persistJob?.cancel()
         }
@@ -274,6 +278,7 @@ class PlayerViewModel(
         prefetchJob?.cancel()
         nextLookupJob?.cancel()
         skipJob?.cancel()
+        fallbackJob?.cancel()
         val snapshot = captureProgress()
         player.removeListener(listener)
         player.release()
@@ -303,6 +308,48 @@ class PlayerViewModel(
         player.playWhenReady = play
         player.prepare()
         loadSkipSegments(item)
+    }
+
+    private fun tryFallback(): Boolean {
+        if (fallbackJob?.isActive == true || awaitingFallback) return true
+        if (_state.value.item.fallbacks.isEmpty()) return false
+        awaitingFallback = true
+        fallbackJob = viewModelScope.launch {
+            try {
+                playNextFallback()
+            } finally {
+                awaitingFallback = false
+            }
+        }
+        return true
+    }
+
+    private suspend fun playNextFallback() {
+        val current = _state.value.item
+        val position = player.currentPosition.takeIf { it > 0L } ?: current.startPositionMs
+        val remaining = current.fallbacks
+        for ((index, option) in remaining.withIndex()) {
+            val url = runCatching { comet.resolvePlaybackUrl(option.playbackUrl) }.getOrNull() ?: continue
+            val next = current.copy(
+                streamUrl = url,
+                startPositionMs = position.coerceAtLeast(0L),
+                resolution = option.resolution,
+                fallbacks = remaining.drop(index + 1),
+            )
+            playbackSession.start(next)
+            _state.value = _state.value.copy(
+                item = next,
+                error = false,
+                upNext = null,
+                skip = null,
+                isPlaying = false,
+            )
+            player.stop()
+            attachItem(next, play = true)
+            if (player.playerError == null) return
+        }
+        _state.value = _state.value.copy(error = true, upNext = null, skip = null, isPlaying = false)
+        persistJob?.cancel()
     }
 
     private fun loadSkipSegments(item: PlaybackItem) {
@@ -635,53 +682,55 @@ class PlayerViewModel(
 
     private suspend fun resolveNext(ref: EpisodeRef): PlaybackItem? {
         val current = _state.value.item
-        val resolution = current.resolution ?: return null
         val imdbId = current.imdbId ?: tmdb.loadDetails(current.mediaType, current.tmdbId).imdbId ?: return null
         val apiKey = settingsStore.realDebridApiKey.first()
         if (apiKey.isBlank()) return null
         val options = runCatching {
             comet.fetchStreams(apiKey, MediaType.TV, imdbId, ref.season, ref.episode, nextTitle)
         }.getOrNull() ?: return null
-        val option = NextStream.pickCachedAtResolution(options, resolution) ?: return null
-        val url = runCatching { comet.resolvePlaybackUrl(option.playbackUrl) }.getOrNull() ?: return null
+        val profile = settingsStore.qualityProfile.first()
+        val ranked = AutoStream.ranked(options, profile, MediaType.TV)
         val startPositionMs = library.playbackPosition(MediaType.TV, current.tmdbId, ref.season, ref.episode)
         val details = runCatching { tmdb.loadDetails(current.mediaType, current.tmdbId) }.getOrNull()
-        val title = details?.title ?: return PlaybackItem(
-            streamUrl = url,
-            title = current.title,
-            subtitle = NextEpisode.episodeSubtitle(ref.season, ref.episode, nextTitle),
-            mediaType = MediaType.TV,
-            tmdbId = current.tmdbId,
-            season = ref.season,
-            episode = ref.episode,
-            overview = current.overview,
-            posterUrl = current.posterUrl,
-            backdropUrl = current.backdropUrl,
-            year = current.year,
-            rating = current.rating,
-            genres = current.genres,
-            startPositionMs = startPositionMs,
-            imdbId = imdbId,
-            resolution = option.resolution,
-        )
-        return PlaybackItem(
-            streamUrl = url,
-            title = title.title,
-            subtitle = NextEpisode.episodeSubtitle(ref.season, ref.episode, nextTitle),
-            mediaType = MediaType.TV,
-            tmdbId = title.id,
-            season = ref.season,
-            episode = ref.episode,
-            overview = title.overview,
-            posterUrl = title.posterUrl,
-            backdropUrl = title.backdropUrl,
-            year = title.year,
-            rating = title.rating,
-            genres = title.genres,
-            startPositionMs = startPositionMs,
-            imdbId = imdbId,
-            resolution = option.resolution,
-        )
+        val subtitle = NextEpisode.episodeSubtitle(ref.season, ref.episode, nextTitle)
+        for ((index, option) in ranked.withIndex()) {
+            val url = runCatching { comet.resolvePlaybackUrl(option.playbackUrl) }.getOrNull() ?: continue
+            val fallbacks = ranked.drop(index + 1)
+            val title = details?.title
+            return if (title == null) {
+                current.copy(
+                    streamUrl = url,
+                    subtitle = subtitle,
+                    season = ref.season,
+                    episode = ref.episode,
+                    startPositionMs = startPositionMs,
+                    imdbId = imdbId,
+                    resolution = option.resolution,
+                    fallbacks = fallbacks,
+                )
+            } else {
+                PlaybackItem(
+                    streamUrl = url,
+                    title = title.title,
+                    subtitle = subtitle,
+                    mediaType = MediaType.TV,
+                    tmdbId = title.id,
+                    season = ref.season,
+                    episode = ref.episode,
+                    overview = title.overview,
+                    posterUrl = title.posterUrl,
+                    backdropUrl = title.backdropUrl,
+                    year = title.year,
+                    rating = title.rating,
+                    genres = title.genres,
+                    startPositionMs = startPositionMs,
+                    imdbId = imdbId,
+                    resolution = option.resolution,
+                    fallbacks = fallbacks,
+                )
+            }
+        }
+        return null
     }
 
     class Factory(

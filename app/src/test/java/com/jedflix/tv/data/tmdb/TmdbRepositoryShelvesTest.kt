@@ -146,7 +146,7 @@ class TmdbRepositoryShelvesTest {
     }
 
     @Test
-    fun billboardStaysOnTrendingNotFirstShelf() = runTest {
+    fun billboardStaysOnTrendingAndHomePinsItFirst() = runTest {
         val api = FakeTmdbApi()
         api.listPages = mapOf(
             (JedsPicksLists.MOVIES to 1) to TmdbListResponse(
@@ -158,11 +158,13 @@ class TmdbRepositoryShelvesTest {
         api.trendingByType["all"] = listOf(media(99, "Trending Hit", "movie"))
         val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
         val catalog = repo.loadCatalog(CatalogSection.HOME)
-        assertEquals("jeds-movies", catalog.rows.first().id)
-        assertFalse(catalog.rows.first().drivesHero)
+        assertEquals(CatalogShelves.TRENDING_HOME, catalog.rows.first().id)
+        assertTrue(catalog.rows.first().drivesHero)
         val trending = catalog.rows.first { it.id == CatalogShelves.TRENDING_HOME }
         assertTrue(trending.drivesHero)
         assertEquals("Trending Hit", catalog.featured.single().title)
+        assertEquals("jeds-movies", catalog.rows[1].id)
+        assertFalse(catalog.rows[1].drivesHero)
     }
 
     @Test
@@ -199,7 +201,7 @@ class TmdbRepositoryShelvesTest {
 
         assertTrue(catalog.rows.none { it.id == "jeds-movies" })
         assertTrue(catalog.rows.none { it.id == "horror" })
-        assertTrue(catalog.rows.none { it.id == CatalogShelves.TRENDING_HOME })
+        assertEquals(CatalogShelves.TRENDING_HOME, catalog.rows.first().id)
         assertEquals("Trending Hit", catalog.featured.single().title)
         assertEquals(listOf("all"), api.trendingCalls)
         assertTrue(api.listCalls.none { it.first == JedsPicksLists.MOVIES })
@@ -207,7 +209,7 @@ class TmdbRepositoryShelvesTest {
     }
 
     @Test
-    fun hidingEveryHomeShelfLeavesFeaturedAndNoCatalogRows() = runTest {
+    fun hidingEveryEditableHomeShelfStillLeavesTrending() = runTest {
         val api = FakeTmdbApi()
         api.trendingByType["all"] = listOf(media(99, "Trending Hit", "movie"))
         val prefs = HomeShelfLayout.resolve(
@@ -215,7 +217,7 @@ class TmdbRepositoryShelvesTest {
         )
         val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
         val catalog = repo.loadCatalog(CatalogSection.HOME, homeShelves = prefs)
-        assertTrue(catalog.rows.isEmpty())
+        assertEquals(listOf(CatalogShelves.TRENDING_HOME), catalog.rows.map { it.id })
         assertEquals("Trending Hit", catalog.featured.single().title)
         assertEquals(listOf("all"), api.trendingCalls)
         assertTrue(api.listCalls.isEmpty())

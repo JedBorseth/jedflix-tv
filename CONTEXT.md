@@ -25,7 +25,7 @@ A Title of type TV.
 _Avoid_: Series, TV show (as a type name), TV page
 
 **Billboard**:
-The hero at the top of a CatalogSection. It is driven by that section's Trending Shelf, not by whichever Shelf happens to be first.
+The hero at the top of a CatalogSection. It is driven by that section's Trending Shelf, not by editorial or Provider Shelves. On Home, Trending Now is the first Shelf. The backdrop Ken Burns pans left to right, then fades to the next Trending title.
 _Avoid_: Banner, featured row
 
 **Provider Shelf**:
@@ -37,5 +37,5 @@ Two editorial Shelves, Jed's Movies and Jed's Shows, whose Titles are the live c
 _Avoid_: Jed's list, curated category, hardcoded picks
 
 **Trailer preview**:
-A 15s hosted MP4 that morphs open from a focused poster after 5s on a CatalogSection. The clip is taken from about a third of the way into a TMDB YouTube video (trailer if TMDB has one, otherwise teaser or any other YouTube clip). Clip prepare waits 1s after focus. Identity comes from TMDB videos; bytes come from `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4` (production: `https://borseth.ddns.net/tv-api/clips/{youtubeKey}.mp4`). When the clip ends the card stays 16:9 on the poster with a play icon until focus leaves. Off when the quality profile is Low.
+A 15s hosted MP4 that morphs open from a focused poster after 5s on a CatalogSection, except on a Trending Shelf. The clip is taken from about a third of the way into a TMDB YouTube video (trailer if TMDB has one, otherwise teaser or any other YouTube clip). Clip prepare waits 1s after focus. Identity comes from TMDB videos; bytes come from `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4` (production: `https://borseth.ddns.net/tv-api/clips/{youtubeKey}.mp4`). When the clip ends the card stays 16:9 on the poster with a play icon until focus leaves. Off when the quality profile is Low.
 _Avoid_: autoplay trailer, YouTube player, hero video (unless describing the billboard destination)

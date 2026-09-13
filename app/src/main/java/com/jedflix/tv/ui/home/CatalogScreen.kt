@@ -39,8 +39,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Button
 import androidx.tv.material3.Icon
@@ -57,6 +60,7 @@ import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import com.jedflix.tv.ui.components.BillboardBackdrop
+import com.jedflix.tv.ui.components.BillboardCycle
 import com.jedflix.tv.ui.components.BillboardInfo
 import com.jedflix.tv.ui.components.CatalogRowView
 import com.jedflix.tv.ui.components.CatalogSkeletons
@@ -149,6 +153,7 @@ fun CatalogScreen(
                     previewUi = previewUi,
                     previewPlayer = preview.player,
                     onPreviewTitle = preview::onTitleFocused,
+                    onPreviewReset = preview::reset,
                     onPreviewMorphFinished = preview::onMorphFinished,
                 )
             }
@@ -181,19 +186,21 @@ private fun CatalogContent(
     onShelfItemFocused: (rowId: String, index: Int, itemCount: Int, hasMore: Boolean) -> Unit,
     previewUi: TrailerPreviewUi,
     previewPlayer: androidx.media3.exoplayer.ExoPlayer,
-    onPreviewTitle: (MediaTitle) -> Unit,
+    onPreviewTitle: (MediaTitle, String) -> Unit,
+    onPreviewReset: () -> Unit,
     onPreviewMorphFinished: () -> Unit,
 ) {
     val fallbackHero = catalog.featured.firstOrNull()
         ?: catalog.rows.firstOrNull()?.items?.firstOrNull()
         ?: return
     var hero: MediaTitle by remember { mutableStateOf(fallbackHero) }
-    var backdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
-    var pendingBackdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
-    LaunchedEffect(pendingBackdrop.key) {
-        if (backdrop.key == pendingBackdrop.key) return@LaunchedEffect
-        delay(BILLBOARD_HERO_SETTLE_MS)
-        backdrop = pendingBackdrop
+    var pendingHero: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    var heroHeldByShelf by remember { mutableStateOf(false) }
+    var panGeneration by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pendingHero.key) {
+        if (hero.key == pendingHero.key) return@LaunchedEffect
+        if (heroHeldByShelf) delay(BILLBOARD_HERO_SETTLE_MS)
+        hero = pendingHero
     }
     val restoreTarget = remember(catalog.rows.map { it.id }) {
         RailRestore.catalogTarget(restoredRowId, restoredItemKey, catalog.rows)
@@ -265,9 +272,27 @@ private fun CatalogContent(
         animationSpec = tween(350),
         label = "backdrop-alpha",
     )
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val catalogResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     Box(modifier = Modifier.fillMaxSize().testTag("catalog")) {
         BillboardBackdrop(
-            title = backdrop,
+            title = hero,
+            pan = true,
+            panActive = catalogResumed && !scrolledAway,
+            panGeneration = panGeneration,
+            onPanFinished = {
+                if (heroHeldByShelf) {
+                    panGeneration++
+                } else {
+                    val next = BillboardCycle.next(catalog.featured, hero.key)
+                    if (next != null) {
+                        pendingHero = next
+                        hero = next
+                    } else {
+                        panGeneration++
+                    }
+                }
+            },
             modifier = Modifier.graphicsLayer { alpha = backdropAlpha },
         )
         CompositionLocalProvider(LocalBringIntoViewSpec provides NoAutoScrollSpec) {
@@ -288,12 +313,13 @@ private fun CatalogContent(
                         downFocusRequester = firstRowEnter,
                         onPlay = { onTitleClick(hero) },
                         onMyList = { onToggleMyList(hero) },
-                        onPlayFocused = {
+                            onPlayFocused = {
+                            heroHeldByShelf = false
                             returnPlay = true
                             returnRowId = null
                             returnItemKey = RailRestore.BILLBOARD_PLAY
                             onBillboardPlayFocused()
-                            onPreviewTitle(hero)
+                            onPreviewReset()
                         },
                     )
                 }
@@ -308,12 +334,14 @@ private fun CatalogContent(
                                 returnRowId = row.id
                                 returnItemKey = focused.key
                                 if (row.drivesHero) {
-                                    hero = focused
-                                    pendingBackdrop = focused
+                                    heroHeldByShelf = true
+                                    pendingHero = focused
+                                } else {
+                                    heroHeldByShelf = false
                                 }
                                 onTitleFocused(row.id, focused.key)
                                 onShelfItemFocused(row.id, itemIndex, row.items.size, row.hasMore)
-                                onPreviewTitle(focused)
+                                if (row.drivesHero) onPreviewReset() else onPreviewTitle(focused, row.id)
                             },
                             onItemClick = { title ->
                                 if (row.id == LibraryRows.CONTINUE_WATCHING) {
@@ -339,7 +367,8 @@ private fun CatalogContent(
                                     restoredItemFocus.takeIf { target.rowId == row.id }
                                 else -> null
                             },
-                            previewTitleKey = previewUi.title?.key,
+                            previewTitleKey = previewUi.title?.key.takeIf { !row.drivesHero },
+                            previewRowId = previewUi.rowId.takeIf { !row.drivesHero },
                             previewPhase = previewUi.phase,
                             previewPlayer = previewPlayer,
                             previewLogoUrl = previewUi.logoUrl,

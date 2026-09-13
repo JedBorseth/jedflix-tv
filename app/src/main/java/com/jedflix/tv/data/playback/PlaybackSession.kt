@@ -1,5 +1,6 @@
 package com.jedflix.tv.data.playback
 
+import com.jedflix.tv.data.comet.StreamOption
 import com.jedflix.tv.data.tmdb.MediaType
 
 /** What the player needs; kept in memory because resolved URLs are too long for nav arguments. */
@@ -20,8 +21,10 @@ data class PlaybackItem(
     val startPositionMs: Long = 0L,
     /** IMDb id used to fetch the next episode's streams without another picker hop. */
     val imdbId: String? = null,
-    /** Stream picker resolution token (e.g. "1080P"); binge autoplay must match this. */
+    /** Stream picker resolution token (e.g. "1080P"). */
     val resolution: String? = null,
+    /** Remaining auto-pick candidates, already ranked, tried if this file fails to play. */
+    val fallbacks: List<StreamOption> = emptyList(),
 )
 
 /** Single-slot hand-off between the stream picker and the player. */

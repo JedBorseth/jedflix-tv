@@ -1,5 +1,6 @@
 package com.jedflix.tv.data.comet
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /** Stremio stream resource as returned by Comet's `/stream/{type}/{id}.json`. */
@@ -33,10 +34,45 @@ data class CometConfigDto(
     val removeTrash: Boolean,
     val deduplicateStreams: Boolean,
     val maxResultsPerResolution: Int,
+    val rtnSettings: CometRtnSettingsDto,
 )
 
 @Serializable
 data class CometDebridServiceDto(
     val service: String,
     val apiKey: String,
+)
+
+@Serializable
+data class CometRtnSettingsDto(
+    @SerialName("custom_ranks") val customRanks: CometCustomRanksDto,
+)
+
+@Serializable
+data class CometCustomRanksDto(
+    val audio: CometAudioRanksDto,
+)
+
+@Serializable
+data class CometAudioRanksDto(
+    @SerialName("dts_lossless") val dtsLossless: CometCustomRankDto,
+)
+
+@Serializable
+data class CometCustomRankDto(
+    val fetch: Boolean,
+)
+
+fun cometAddonConfig(apiKey: String, maxResultsPerResolution: Int): CometConfigDto = CometConfigDto(
+    debridServices = listOf(CometDebridServiceDto(service = "realdebrid", apiKey = apiKey)),
+    cachedOnly = true,
+    enableTorrent = false,
+    removeTrash = true,
+    deduplicateStreams = true,
+    maxResultsPerResolution = maxResultsPerResolution,
+    rtnSettings = CometRtnSettingsDto(
+        customRanks = CometCustomRanksDto(
+            audio = CometAudioRanksDto(dtsLossless = CometCustomRankDto(fetch = false)),
+        ),
+    ),
 )

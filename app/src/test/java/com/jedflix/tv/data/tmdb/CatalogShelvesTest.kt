@@ -7,10 +7,11 @@ import org.junit.Test
 class CatalogShelvesTest {
 
     @Test
-    fun homePrependsEditorialAndProviderShelvesBeforeTrending() {
+    fun homePinsTrendingNowBeforeEditorialAndProviderShelves() {
         val ids = CatalogShelves.forSection(CatalogSection.HOME).map { it.id }
         assertEquals(
             listOf(
+                CatalogShelves.TRENDING_HOME,
                 "jeds-movies",
                 "jeds-shows",
                 "crave-movies",
@@ -21,7 +22,6 @@ class CatalogShelvesTest {
                 "paramount-shows",
                 "disney-movies",
                 "disney-shows",
-                CatalogShelves.TRENDING_HOME,
             ),
             ids.take(11),
         )

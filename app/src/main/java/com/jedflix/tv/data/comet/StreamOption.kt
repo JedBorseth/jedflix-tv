@@ -16,7 +16,16 @@ data class StreamOption(
     val playbackUrl: String,
 ) {
     val sizeLabel: String? get() = sizeBytes?.let(::formatBytes)
+
+    /** DTS-HD MA / DTS:X; Android TVs play these as silence without an AVR. */
+    val hasDtsLosslessAudio: Boolean
+        get() = DTS_LOSSLESS.containsMatchIn(filename) || details.any { DTS_LOSSLESS.containsMatchIn(it) }
 }
+
+private val DTS_LOSSLESS = Regex(
+    """dts[-.\s]?hd[-.\s]?(?:ma|master)|dtshdma|dts[-.:\s]?x(?:\b|$)|dts\s*lossless""",
+    RegexOption.IGNORE_CASE,
+)
 
 private const val CACHED_MARK = "⚡"
 private val NOTICE_MARKS = listOf("❌", "🔄", "⚠️")

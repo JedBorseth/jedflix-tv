@@ -11,7 +11,7 @@
 
     <string name="settings_title">Settings</string>
     <string name="settings_home_shelves_heading">Home shelves</string>
-    <string name="settings_home_shelves_description">Show, hide, and reorder the catalog shelves on Home. Continue Watching, My List, and Watch History stay at the top.</string>
+    <string name="settings_home_shelves_description">Show, hide, and reorder the catalog shelves on Home. Trending Now, Continue Watching, My List, and Watch History stay at the top.</string>
     <string name="settings_home_shelves_reset">Reset</string>
     <string name="settings_home_shelves_show_all">Show all</string>
     <string name="settings_home_shelves_show_less">Show less</string>
@@ -35,9 +35,9 @@
     <string name="settings_quality_max">Max</string>
     <string name="settings_quality_max_description">Blu-ray remuxes up to about 80 GB. Use only on a fast, stable connection.</string>
     <string name="settings_quality_medium">Medium</string>
-    <string name="settings_quality_medium_description">A balance of picture quality and file size. Best for typical home internet.</string>
+    <string name="settings_quality_medium_description">1080p or better, under 30 GB for movies and under 1 GB for shows. Best for typical home internet.</string>
     <string name="settings_quality_low">Low</string>
-    <string name="settings_quality_low_description">Lower-quality streams. Also turns off extras like autoplay trailers and high-resolution images on the browse screen.</string>
+    <string name="settings_quality_low_description">720p streams. Also turns off extras like autoplay trailers and high-resolution images on the browse screen.</string>
 
     <string name="settings_about_heading">About</string>
     <string name="settings_version">Version %1$s</string>
@@ -65,6 +65,7 @@
 
     <string name="action_play">Play</string>
     <string name="action_resume">Resume</string>
+    <string name="action_starting">Starting…</string>
     <string name="action_my_list">My List</string>
     <string name="action_my_list_remove">Remove</string>
     <string name="action_retry">Retry</string>
@@ -130,6 +131,9 @@
     <string name="player_captions">Captions</string>
     <string name="player_audio">Audio</string>
     <string name="player_switch_stream">Switch stream</string>
+    <string name="player_letterboxd">Letterboxd</string>
+    <string name="player_letterboxd_qr_cd">QR code to log this title on Letterboxd</string>
+    <string name="player_more">More</string>
     <string name="player_timeline">Timeline</string>
     <string name="player_skip_intro">Skip intro</string>
     <string name="player_skip_recap">Skip recap</string>

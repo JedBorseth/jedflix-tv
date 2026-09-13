@@ -1,6 +1,7 @@
 package com.jedflix.tv.ui.player
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -39,6 +40,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -61,6 +64,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
@@ -68,10 +72,13 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
+import com.jedflix.tv.data.playback.LetterboxdLog
 import com.jedflix.tv.data.playback.PlaybackClock
 import com.jedflix.tv.data.playback.SkipAction
 import com.jedflix.tv.data.playback.SkipKind
 import com.jedflix.tv.data.playback.TimelineScrub
+import com.jedflix.tv.data.rdpairing.encodeQrBitmap
+import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.JedflixRed
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -87,12 +94,14 @@ internal fun PlayerChrome(
     seekHintSec: Int?,
     playFocus: FocusRequester,
     timelineFocus: FocusRequester,
+    letterboxdOpen: Boolean,
     onPlayPause: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
     onCaptions: () -> Unit,
     onAudio: () -> Unit,
     onSwitchStream: () -> Unit,
+    onToggleLetterboxd: () -> Unit,
     onScrubBy: (Long) -> Unit,
     onSurfaceTap: () -> Unit,
 ) {
@@ -110,7 +119,14 @@ internal fun PlayerChrome(
                 detectTapGestures { onSurfaceTap() }
             },
     ) {
-        TitleOverlay(title = state.item.title, subtitle = state.item.subtitle)
+        TitleBar(
+            title = state.item.title,
+            subtitle = state.item.subtitle,
+            showLetterboxd = state.item.mediaType == MediaType.MOVIE,
+            playFocus = playFocus,
+            letterboxdOpen = letterboxdOpen,
+            onToggleLetterboxd = onToggleLetterboxd,
+        )
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -589,8 +605,20 @@ internal fun PlayerError(onBack: () -> Unit) {
 }
 
 @Composable
-private fun TitleOverlay(title: String, subtitle: String?) {
-    Column(
+private fun TitleBar(
+    title: String,
+    subtitle: String?,
+    showLetterboxd: Boolean,
+    playFocus: FocusRequester,
+    letterboxdOpen: Boolean,
+    onToggleLetterboxd: () -> Unit,
+) {
+    val toPlay = Modifier.focusProperties { down = playFocus }
+    val qr = remember(title, showLetterboxd) {
+        if (!showLetterboxd) return@remember null
+        runCatching { encodeQrBitmap(LetterboxdLog.url(title), sizePx = 256).asImageBitmap() }.getOrNull()
+    }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
@@ -600,23 +628,67 @@ private fun TitleOverlay(title: String, subtitle: String?) {
                 ),
             )
             .padding(start = 48.dp, end = 48.dp, top = 32.dp, bottom = 56.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = WarmWhite,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (!subtitle.isNullOrBlank()) {
-            Spacer(Modifier.height(4.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = subtitle,
-                style = MaterialTheme.typography.titleMedium,
-                color = Zinc300,
+                text = title,
+                style = MaterialTheme.typography.headlineMedium,
+                color = WarmWhite,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Zinc300,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (showLetterboxd) {
+                    ControlButton(
+                        onClick = onToggleLetterboxd,
+                        icon = JedflixIcons.Letterboxd,
+                        label = stringResource(R.string.player_letterboxd),
+                        modifier = Modifier.then(toPlay).testTag("player-letterboxd"),
+                        showLabel = false,
+                        iconTint = Color.Unspecified,
+                    )
+                }
+                ControlButton(
+                    onClick = {},
+                    icon = JedflixIcons.MoreHoriz,
+                    label = stringResource(R.string.player_more),
+                    modifier = Modifier.then(toPlay).testTag("player-more"),
+                    showLabel = false,
+                )
+            }
+            if (letterboxdOpen && qr != null) {
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .size(168.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White)
+                        .padding(10.dp)
+                        .testTag("player-letterboxd-qr"),
+                ) {
+                    Image(
+                        bitmap = qr,
+                        contentDescription = stringResource(R.string.player_letterboxd_qr_cd),
+                        contentScale = ContentScale.Fit,
+                        filterQuality = FilterQuality.None,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
         }
     }
 }
@@ -629,6 +701,7 @@ private fun ControlButton(
     modifier: Modifier = Modifier,
     emphasized: Boolean = false,
     showLabel: Boolean = true,
+    iconTint: Color? = null,
 ) {
     Button(
         onClick = onClick,
@@ -644,6 +717,7 @@ private fun ControlButton(
             icon,
             contentDescription = if (showLabel) null else label,
             modifier = Modifier.size(22.dp),
+            tint = iconTint ?: LocalContentColor.current,
         )
         if (showLabel) {
             Spacer(Modifier.width(8.dp))

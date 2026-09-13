@@ -87,7 +87,15 @@ fun StreamPickerScreen(
     val viewModel: StreamPickerViewModel = viewModel(
         key = "streams-${mediaType.apiValue}-$mediaId-$season-$episode",
         factory = StreamPickerViewModel.Factory(
-            mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession, library,
+            mediaType,
+            mediaId,
+            season,
+            episode,
+            repository,
+            cometClient,
+            settingsStore,
+            playbackSession,
+            library,
         ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()

@@ -71,6 +71,7 @@ class CometClient(
         }
 
         val options = response.streams.mapNotNull { it.toStreamOption() }
+            .filterNot { it.hasDtsLosslessAudio }
         if (options.isEmpty()) {
             val notice = response.streams.firstOrNull { it.isDebridErrorNotice() }
             if (notice != null) {
@@ -147,14 +148,7 @@ class CometClient(
     }
 
     private fun encodeConfig(apiKey: String): String {
-        val config = CometConfigDto(
-            debridServices = listOf(CometDebridServiceDto(service = "realdebrid", apiKey = apiKey)),
-            cachedOnly = true,
-            enableTorrent = false,
-            removeTrash = true,
-            deduplicateStreams = true,
-            maxResultsPerResolution = MAX_RESULTS_PER_RESOLUTION,
-        )
+        val config = cometAddonConfig(apiKey, MAX_RESULTS_PER_RESOLUTION)
         val payload = json.encodeToString(CometConfigDto.serializer(), config)
         return Base64.encodeToString(payload.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }

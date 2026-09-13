@@ -1,5 +1,6 @@
 package com.jedflix.tv.ui.streams
 
+import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.comet.StreamOption
 import com.jedflix.tv.data.tmdb.MediaTitle
 
@@ -34,6 +35,14 @@ enum class StreamErrorKind {
     DEBRID,
     /** Couldn't reach Comet. */
     NETWORK,
+}
+
+fun StreamException.toKind(): StreamErrorKind = when (this) {
+    is StreamException.MissingKey -> StreamErrorKind.MISSING_KEY
+    is StreamException.NoImdbId -> StreamErrorKind.NO_IMDB
+    is StreamException.NoStreams -> StreamErrorKind.NO_STREAMS
+    is StreamException.DebridError -> StreamErrorKind.DEBRID
+    is StreamException.ResolveFailed, is StreamException.Network -> StreamErrorKind.NETWORK
 }
 
 sealed interface StreamPickerUiState {

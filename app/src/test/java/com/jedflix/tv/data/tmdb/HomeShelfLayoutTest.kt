@@ -15,9 +15,9 @@ class HomeShelfLayoutTest {
     )
 
     @Test
-    fun defaultConfigUsesFactoryOrderAndAllVisible() {
+    fun defaultConfigUsesFactoryOrderWithoutTrending() {
         val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), factory)
-        assertEquals(factory.map { it.id }, prefs.map { it.id })
+        assertEquals(listOf("jeds-movies", "crave-movies", "horror"), prefs.map { it.id })
         assertTrue(prefs.all { it.visible })
     }
 
@@ -27,10 +27,7 @@ class HomeShelfLayoutTest {
             HomeShelfConfig(order = listOf("horror", "gone", "jeds-movies")),
             factory,
         )
-        assertEquals(
-            listOf("horror", "jeds-movies", "crave-movies", CatalogShelves.TRENDING_HOME),
-            prefs.map { it.id },
-        )
+        assertEquals(listOf("horror", "jeds-movies", "crave-movies"), prefs.map { it.id })
     }
 
     @Test
@@ -39,10 +36,7 @@ class HomeShelfLayoutTest {
             HomeShelfConfig(order = listOf("jeds-movies", "crave-movies")),
             factory,
         )
-        assertEquals(
-            listOf("jeds-movies", "crave-movies", CatalogShelves.TRENDING_HOME, "horror"),
-            prefs.map { it.id },
-        )
+        assertEquals(listOf("jeds-movies", "crave-movies", "horror"), prefs.map { it.id })
         assertTrue(prefs.all { it.visible })
     }
 
@@ -58,14 +52,18 @@ class HomeShelfLayoutTest {
         assertEquals("crave-movies", hidden[1].id)
         assertFalse(hidden[1].visible)
         val arranged = HomeShelfLayout.arrangeRows(
-            rows = hidden.map { CatalogRow(it.id, it.title, items = emptyList()) },
+            rows = hidden.map { CatalogRow(it.id, it.title, items = emptyList()) } +
+                CatalogRow(CatalogShelves.TRENDING_HOME, "Trending Now", items = emptyList()),
             prefs = hidden,
         )
-        assertEquals(listOf("jeds-movies", CatalogShelves.TRENDING_HOME, "horror"), arranged.map { it.id })
+        assertEquals(
+            listOf(CatalogShelves.TRENDING_HOME, "jeds-movies", "horror"),
+            arranged.map { it.id },
+        )
     }
 
     @Test
-    fun fetchIdsAlwaysIncludeTrendingEvenWhenHidden() {
+    fun fetchIdsAlwaysIncludeTrendingEvenWhenHiddenInSavedConfig() {
         val prefs = HomeShelfLayout.resolve(
             HomeShelfConfig(hidden = setOf(CatalogShelves.TRENDING_HOME, "horror")),
             factory,
@@ -74,6 +72,7 @@ class HomeShelfLayoutTest {
         assertTrue(fetch.contains(CatalogShelves.TRENDING_HOME))
         assertFalse(fetch.contains("horror"))
         assertTrue(fetch.contains("jeds-movies"))
+        assertTrue(prefs.none { it.id == CatalogShelves.TRENDING_HOME })
     }
 
     @Test
@@ -84,7 +83,14 @@ class HomeShelfLayoutTest {
         assertEquals(prefs, HomeShelfLayout.move(prefs, first, -1))
         assertEquals(prefs, HomeShelfLayout.move(prefs, last, 1))
         val swapped = HomeShelfLayout.move(prefs, first, 1)
-        assertEquals(listOf("crave-movies", "jeds-movies", CatalogShelves.TRENDING_HOME, "horror"), swapped.map { it.id })
+        assertEquals(listOf("crave-movies", "jeds-movies", "horror"), swapped.map { it.id })
+    }
+
+    @Test
+    fun toggleAndMoveIgnoreTrending() {
+        val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), factory)
+        assertEquals(prefs, HomeShelfLayout.toggleVisible(prefs, CatalogShelves.TRENDING_HOME))
+        assertEquals(prefs, HomeShelfLayout.move(prefs, CatalogShelves.TRENDING_HOME, 1))
     }
 
     @Test
@@ -95,24 +101,27 @@ class HomeShelfLayoutTest {
         )
         val config = HomeShelfLayout.toConfig(prefs)
         assertEquals(setOf("horror"), config.hidden)
-        assertEquals(factory.map { it.id }, config.order)
+        assertEquals(listOf("jeds-movies", "crave-movies", "horror"), config.order)
         assertEquals(prefs, HomeShelfLayout.resolve(config, factory))
     }
 
     @Test
-    fun factoryHomeHasNineteenCatalogShelves() {
-        assertEquals(19, HomeShelfLayout.factorySpecs().size)
+    fun factoryHomeOmitsPinnedTrending() {
+        val ids = HomeShelfLayout.factorySpecs().map { it.id }
+        assertEquals(18, ids.size)
+        assertFalse(ids.contains(CatalogShelves.TRENDING_HOME))
     }
 
     @Test
-    fun settingsPreviewShowsFirstFourUntilExpanded() {
+    fun settingsPreviewNeverListsTrending() {
         val many = factory + spec("comedy", "Comedy") + spec("scifi", "Sci-Fi")
         val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), many)
         assertEquals(
-            listOf("jeds-movies", "crave-movies", CatalogShelves.TRENDING_HOME, "horror"),
+            listOf("jeds-movies", "crave-movies", "horror", "comedy"),
             HomeShelfLayout.settingsList(prefs, expanded = false).map { it.id },
         )
-        assertEquals(prefs, HomeShelfLayout.settingsList(prefs, expanded = true))
+        assertEquals(prefs.map { it.id }, HomeShelfLayout.settingsList(prefs, expanded = true).map { it.id })
+        assertTrue(prefs.none { it.id == CatalogShelves.TRENDING_HOME })
         assertTrue(HomeShelfLayout.settingsNeedsShowAll(prefs))
     }
 
@@ -122,6 +131,19 @@ class HomeShelfLayoutTest {
         val prefs = HomeShelfLayout.resolve(HomeShelfConfig(), shortFactory)
         assertEquals(prefs, HomeShelfLayout.settingsList(prefs, expanded = false))
         assertFalse(HomeShelfLayout.settingsNeedsShowAll(prefs))
+    }
+
+    @Test
+    fun pinTrendingMovesRowAbovePersonalShelves() {
+        val rows = listOf(
+            CatalogRow("continue-watching", "Continue Watching", items = emptyList()),
+            CatalogRow("jeds-movies", "Jed's Movies", items = emptyList()),
+            CatalogRow(CatalogShelves.TRENDING_HOME, "Trending Now", items = emptyList()),
+        )
+        assertEquals(
+            listOf(CatalogShelves.TRENDING_HOME, "continue-watching", "jeds-movies"),
+            HomeShelfLayout.pinTrending(rows).map { it.id },
+        )
     }
 
     private fun spec(id: String, title: String) = ShelfSpec.MovieList(id, title, "popular")

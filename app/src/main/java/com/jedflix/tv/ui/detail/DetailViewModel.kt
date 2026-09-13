@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.playback.ShowPlay
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
@@ -85,10 +86,14 @@ class DetailViewModel(
         restoringFocus = true
     }
 
-    fun selectSeason(seasonNumber: Int) {
+    fun selectSeason(seasonNumber: Int, focusEpisode: Int? = null) {
         val current = _state.value as? DetailUiState.Ready ?: return
+        if (focusEpisode != null) {
+            episodeNumber = focusEpisode
+        } else if (current.selectedSeason != seasonNumber) {
+            episodeNumber = null
+        }
         if (current.selectedSeason == seasonNumber && current.episodes.isNotEmpty()) return
-        episodeNumber = null
         viewModelScope.launch {
             _state.value = current.copy(selectedSeason = seasonNumber, episodesLoading = true)
             val episodes = runCatching { repository.loadSeasonEpisodes(mediaId, seasonNumber) }
@@ -97,6 +102,16 @@ class DetailViewModel(
             if (latest.selectedSeason != seasonNumber) return@launch
             _state.value = latest.copy(episodes = episodes, episodesLoading = false)
         }
+    }
+
+    /** Season 1 episode 2, so Browse Episodes skips the Play button's S1E1 start. */
+    fun browseEpisodes() {
+        val current = _state.value as? DetailUiState.Ready ?: return
+        val season = ShowPlay.browseSeason(current.details.seasons.map { it.seasonNumber })
+        focusRail = DetailRail.EPISODES
+        seasonChip = season
+        episodeNumber = ShowPlay.BROWSE_EPISODE
+        selectSeason(season, focusEpisode = ShowPlay.BROWSE_EPISODE)
     }
 
     private fun load(force: Boolean) {

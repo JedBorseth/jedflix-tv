@@ -40,6 +40,7 @@ import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
+import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import kotlinx.coroutines.delay
 
@@ -78,6 +79,7 @@ fun PlayerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
     var menu by remember { mutableStateOf(PlayerMenu.None) }
+    var letterboxdOpen by remember { mutableStateOf(false) }
     var seekHintSec by remember { mutableStateOf<Int?>(null) }
     var hideGeneration by remember { mutableIntStateOf(0) }
     val transportFocus = remember { FocusRequester() }
@@ -107,7 +109,7 @@ fun PlayerScreen(
     }
 
     fun hideChrome() {
-        if (menu != PlayerMenu.None || state.upNext != null) return
+        if (menu != PlayerMenu.None || state.upNext != null || letterboxdOpen) return
         controlsVisible = false
         menu = PlayerMenu.None
     }
@@ -118,8 +120,8 @@ fun PlayerScreen(
         showChrome()
     }
 
-    LaunchedEffect(controlsVisible, state.isPlaying, state.isEnded, menu, state.upNext, hideGeneration, state.error) {
-        if (state.error || state.upNext != null || menu != PlayerMenu.None) return@LaunchedEffect
+    LaunchedEffect(controlsVisible, state.isPlaying, state.isEnded, menu, state.upNext, hideGeneration, state.error, letterboxdOpen) {
+        if (state.error || state.upNext != null || menu != PlayerMenu.None || letterboxdOpen) return@LaunchedEffect
         if (!controlsVisible) return@LaunchedEffect
         if (!state.isPlaying || state.isEnded) return@LaunchedEffect
         delay(CONTROLLER_TIMEOUT_MS)
@@ -173,8 +175,15 @@ fun PlayerScreen(
         runCatching { skipFocus.requestFocus() }
     }
 
-    BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null) {
+    LaunchedEffect(state.error, state.upNext, state.item.mediaType) {
+        if (state.error || state.upNext != null || state.item.mediaType != MediaType.MOVIE) {
+            letterboxdOpen = false
+        }
+    }
+
+    BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null || letterboxdOpen) {
         when {
+            letterboxdOpen -> letterboxdOpen = false
             menu != PlayerMenu.None -> menu = PlayerMenu.None
             else -> viewModel.dismissUpNext()
         }
@@ -264,6 +273,7 @@ fun PlayerScreen(
                 seekHintSec = seekHintSec,
                 playFocus = playFocus,
                 timelineFocus = timelineFocus,
+                letterboxdOpen = letterboxdOpen,
                 onPlayPause = {
                     viewModel.togglePlayPause()
                     showChrome()
@@ -271,16 +281,23 @@ fun PlayerScreen(
                 onSeekBack = { seekBy(-10) },
                 onSeekForward = { seekBy(10) },
                 onCaptions = {
+                    letterboxdOpen = false
                     showChrome()
                     menu = PlayerMenu.Captions
                 },
                 onAudio = {
+                    letterboxdOpen = false
                     showChrome()
                     menu = PlayerMenu.Audio
                 },
                 onSwitchStream = {
                     showChrome()
                     viewModel.switchStream()
+                },
+                onToggleLetterboxd = {
+                    if (state.item.mediaType != MediaType.MOVIE) return@PlayerChrome
+                    showChrome()
+                    letterboxdOpen = !letterboxdOpen
                 },
                 onScrubBy = { deltaMs ->
                     viewModel.scrubBy(deltaMs)

@@ -10,16 +10,25 @@ object Routes {
 
     fun settings(focusKey: Boolean = false): String = "settings?focusKey=$focusKey"
     const val DETAIL = "detail/{mediaType}/{id}"
-    const val STREAMS = "streams/{mediaType}/{id}?season={season}&episode={episode}"
+    const val STREAMS = "streams/{mediaType}/{id}?season={season}&episode={episode}&auto={auto}"
     const val PLAYER = "player"
 
     /** Sentinel for "no season/episode"; nav args can't carry nullable ints. */
     const val NO_EPISODE = -1
+    const val AUTO_PLAY = 1
+    const val MANUAL_PICK = 0
 
     fun detail(title: MediaTitle): String = detail(title.mediaType, title.id)
 
     fun detail(type: MediaType, id: Int): String = "detail/${type.apiValue}/$id"
 
-    fun streams(type: MediaType, id: Int, season: Int? = null, episode: Int? = null): String =
-        "streams/${type.apiValue}/$id?season=${season ?: NO_EPISODE}&episode=${episode ?: NO_EPISODE}"
+    fun streams(
+        type: MediaType,
+        id: Int,
+        season: Int? = null,
+        episode: Int? = null,
+        auto: Boolean = false,
+    ): String =
+        "streams/${type.apiValue}/$id?season=${season ?: NO_EPISODE}&episode=${episode ?: NO_EPISODE}" +
+            "&auto=${if (auto) AUTO_PLAY else MANUAL_PICK}"
 }

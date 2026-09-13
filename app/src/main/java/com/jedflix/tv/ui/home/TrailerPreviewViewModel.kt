@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 
 data class TrailerPreviewUi(
     val title: MediaTitle? = null,
+    val rowId: String? = null,
     val phase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
     val logoUrl: String? = null,
 )
@@ -91,20 +92,21 @@ class TrailerPreviewViewModel(
         }
     }
 
-    fun onTitleFocused(title: MediaTitle) {
+    fun onTitleFocused(title: MediaTitle, rowId: String) {
         if (quality == QualityProfile.Low) {
             reset()
             return
         }
         val keepGoing = machine.titleKey == title.key &&
+            machine.rowId == rowId &&
             !machine.failed &&
             machine.phase != TrailerPreviewPhase.Hidden
         focusedTitle = title
         if (!keepGoing) logoUrl = null
-        dispatch(TrailerPreviewEvent.Focused(title.key))
+        dispatch(TrailerPreviewEvent.Focused(title.key, rowId))
         if (keepGoing) return
         stopPlayer()
-        startHoldAndPrepare(title)
+        startHoldAndPrepare(title, rowId)
     }
 
     fun onMorphFinished() {
@@ -131,7 +133,7 @@ class TrailerPreviewViewModel(
         super.onCleared()
     }
 
-    private fun startHoldAndPrepare(title: MediaTitle) {
+    private fun startHoldAndPrepare(title: MediaTitle, rowId: String) {
         holdJob?.cancel()
         resolveJob?.cancel()
         holdJob = viewModelScope.launch {
@@ -142,10 +144,10 @@ class TrailerPreviewViewModel(
         }
         resolveJob = viewModelScope.launch {
             delay(TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS)
-            if (machine.titleKey != title.key || machine.phase == TrailerPreviewPhase.Hidden) return@launch
+            if (!stillPreparing(title.key, rowId)) return@launch
             launch {
                 val logo = tmdb.loadTitleLogoUrl(title.mediaType, title.id)
-                if (machine.titleKey != title.key) return@launch
+                if (!stillPreparing(title.key, rowId)) return@launch
                 logoUrl = logo
                 publish()
             }
@@ -155,7 +157,7 @@ class TrailerPreviewViewModel(
                 val youtubeKey = tmdb.loadTrailerYoutubeKey(title.mediaType, title.id)
                 youtubeKey?.let { TrailerClipUrls.url(clipBaseUrl, it) }
             }
-            if (machine.titleKey != title.key) return@launch
+            if (!stillPreparing(title.key, rowId)) return@launch
             if (url == null) {
                 dispatch(TrailerPreviewEvent.PlayerFailed)
                 return@launch
@@ -164,6 +166,11 @@ class TrailerPreviewViewModel(
             attachClip(url)
         }
     }
+
+    private fun stillPreparing(titleKey: String, rowId: String): Boolean =
+        machine.titleKey == titleKey &&
+            machine.rowId == rowId &&
+            machine.phase != TrailerPreviewPhase.Hidden
 
     private fun attachClip(url: String) {
         clipAttached = true
@@ -202,7 +209,12 @@ class TrailerPreviewViewModel(
 
     private fun publish() {
         val title = focusedTitle?.takeIf { it.key == machine.titleKey }
-        _ui.value = TrailerPreviewUi(title = title, phase = machine.phase, logoUrl = logoUrl)
+        _ui.value = TrailerPreviewUi(
+            title = title,
+            rowId = machine.rowId,
+            phase = machine.phase,
+            logoUrl = logoUrl,
+        )
     }
 
     class Factory(

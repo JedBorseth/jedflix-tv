@@ -224,5 +224,5 @@ private fun mergePersonalRows(
             )
         }
     }
-    return catalog.copy(rows = personal + tmdbRows)
+    return catalog.copy(rows = HomeShelfLayout.pinTrending(personal + tmdbRows))
 }

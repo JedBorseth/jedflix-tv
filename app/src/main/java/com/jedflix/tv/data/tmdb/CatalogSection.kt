@@ -104,8 +104,9 @@ object CatalogShelves {
     }
 
     fun forSection(section: CatalogSection): List<ShelfSpec> = when (section) {
-        CatalogSection.HOME -> homeEditorialAndProviders + listOf(
+        CatalogSection.HOME -> listOf(
             ShelfSpec.Trending(TRENDING_HOME, "Trending Now", "all"),
+        ) + homeEditorialAndProviders + listOf(
             ShelfSpec.MovieList("popular-movies", "Popular Movies", "popular"),
             ShelfSpec.TvList("popular-tv", "Popular TV", "popular"),
             ShelfSpec.MovieList("top-movies", "Top Rated Movies", "top_rated"),

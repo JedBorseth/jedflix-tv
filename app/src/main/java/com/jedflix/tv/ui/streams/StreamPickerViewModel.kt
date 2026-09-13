@@ -8,7 +8,8 @@ import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.comet.StreamOption
 import com.jedflix.tv.data.library.UserLibraryRepository
-import com.jedflix.tv.data.playback.PlaybackItem
+import com.jedflix.tv.data.playback.AutoStream
+import com.jedflix.tv.data.playback.PlaybackResolver
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaType
@@ -35,6 +36,13 @@ class StreamPickerViewModel(
     private val settingsStore: SettingsStore,
     private val playbackSession: PlaybackSession,
     private val library: UserLibraryRepository,
+    private val resolver: PlaybackResolver = PlaybackResolver(
+        repository,
+        cometClient,
+        settingsStore,
+        library,
+        playbackSession,
+    ),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<StreamPickerUiState>(StreamPickerUiState.Loading(null))
@@ -45,6 +53,7 @@ class StreamPickerViewModel(
     val play: SharedFlow<Unit> = _play.asSharedFlow()
 
     private var resolveJob: Job? = null
+    private var loadJob: Job? = null
 
     init {
         load()
@@ -57,45 +66,9 @@ class StreamPickerViewModel(
         if (current.resolving != null) return
         _state.value = current.copy(resolving = option, resolveError = null)
         resolveJob = viewModelScope.launch {
-            try {
-                val url = cometClient.resolvePlaybackUrl(option.playbackUrl)
-                val startPositionMs = library.playbackPosition(
-                    mediaType,
-                    mediaId,
-                    current.target.season,
-                    current.target.episode,
-                )
-                val title = current.target.title
-                val details = repository.loadDetails(mediaType, mediaId)
-                playbackSession.start(
-                    PlaybackItem(
-                        streamUrl = url,
-                        title = title.title,
-                        subtitle = current.target.subtitle,
-                        mediaType = title.mediaType,
-                        tmdbId = title.id,
-                        season = current.target.season,
-                        episode = current.target.episode,
-                        overview = title.overview,
-                        posterUrl = title.posterUrl,
-                        backdropUrl = title.backdropUrl,
-                        year = title.year,
-                        rating = title.rating,
-                        genres = title.genres,
-                        startPositionMs = startPositionMs,
-                        imdbId = details.imdbId,
-                        resolution = option.resolution,
-                    ),
-                )
-                _state.value = current.copy(resolving = null, resolveError = null)
-                _play.tryEmit(Unit)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: StreamException) {
-                _state.value = current.copy(resolving = null, resolveError = e.message)
-            } catch (e: Exception) {
-                _state.value = current.copy(resolving = null, resolveError = "Couldn't resolve this stream")
-            }
+            val profile = settingsStore.qualityProfile.first()
+            val ranked = AutoStream.ranked(current.options, profile, mediaType)
+            resolveAndPlay(current, option, AutoStream.afterFailure(ranked, option.id))
         }
     }
 
@@ -107,7 +80,10 @@ class StreamPickerViewModel(
     }
 
     private fun load() {
-        viewModelScope.launch {
+        resolveJob?.cancel()
+        resolveJob = null
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             var target: StreamTarget? = null
             _state.value = StreamPickerUiState.Loading(null)
             try {
@@ -135,7 +111,10 @@ class StreamPickerViewModel(
                     episode,
                     episodeTitle,
                 )
-                _state.value = StreamPickerUiState.Ready(target = target, options = options)
+                _state.value = StreamPickerUiState.Ready(
+                    target = target,
+                    options = options,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: StreamException) {
@@ -146,12 +125,32 @@ class StreamPickerViewModel(
         }
     }
 
-    private fun StreamException.toKind(): StreamErrorKind = when (this) {
-        is StreamException.MissingKey -> StreamErrorKind.MISSING_KEY
-        is StreamException.NoImdbId -> StreamErrorKind.NO_IMDB
-        is StreamException.NoStreams -> StreamErrorKind.NO_STREAMS
-        is StreamException.DebridError -> StreamErrorKind.DEBRID
-        is StreamException.ResolveFailed, is StreamException.Network -> StreamErrorKind.NETWORK
+    private suspend fun resolveAndPlay(
+        current: StreamPickerUiState.Ready,
+        option: StreamOption,
+        fallbacks: List<StreamOption>,
+    ) {
+        _state.value = current.copy(resolving = option, resolveError = null)
+        try {
+            val details = repository.loadDetails(mediaType, mediaId)
+            resolver.start(
+                title = current.target.title,
+                imdbId = details.imdbId,
+                season = current.target.season,
+                episode = current.target.episode,
+                episodeTitle = current.target.episodeTitle,
+                option = option,
+                fallbacks = fallbacks,
+            )
+            _state.value = current.copy(resolving = null, resolveError = null)
+            _play.tryEmit(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: StreamException) {
+            _state.value = current.copy(resolving = null, resolveError = e.message)
+        } catch (e: Exception) {
+            _state.value = current.copy(resolving = null, resolveError = "Couldn't resolve this stream")
+        }
     }
 
     class Factory(
@@ -168,7 +167,15 @@ class StreamPickerViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
             StreamPickerViewModel(
-                mediaType, mediaId, season, episode, repository, cometClient, settingsStore, playbackSession, library,
+                mediaType,
+                mediaId,
+                season,
+                episode,
+                repository,
+                cometClient,
+                settingsStore,
+                playbackSession,
+                library,
             ) as T
     }
 }
