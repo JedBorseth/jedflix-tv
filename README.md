@@ -4,7 +4,7 @@ Android TV / Google TV client for [JedFlix](https://github.com/JedBorseth/jedfli
 
 Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playback through Real-Debrid.
 
-![Home catalog](docs/home.png)![Real-Debrid QR pairing](docs/settings.png)![Stream picker](docs/streams.png)
+![Home catalog](docs/home.png)![Stream picker](docs/streams.png)
 
 **[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.6.3)** · Leanback, API 24+ · sideload only (not on Play Store)
 
@@ -19,7 +19,7 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 | Settings | Real-Debrid key on-device (type or QR from phone); Home shelf order and visibility; quality profile; version and in-app APK updates |
 
 
-The RD key stays in DataStore on the TV. It is sent only to [Comet](https://comet.elfhosted.com) to find/unrestrict streams — never to Convex or JedFlix web.
+The RD key stays in DataStore on the TV. It is sent only to [Comet](https://comet.elfhosted.com) to find/unrestrict streams — never to JedFlix web.
 
 ## Todo
 
