@@ -4,7 +4,8 @@ sdk.dir=/Users/you/Library/Android/sdk
 # TMDB v3 API key: https://www.themoviedb.org/settings/api
 TMDB_API_KEY=
 
-# Directory of hosted 30s trailer MP4s named {youtubeKey}.mp4
+# Directory of hosted 15s trailer MP4s named {youtubeKey}.mp4.
+# Leave blank to use production: https://borseth.ddns.net/tv-api/clips
 TRAILER_CLIP_BASE_URL=
 
 # JedFlix TV API base (server/ in this repo). Leave blank for production

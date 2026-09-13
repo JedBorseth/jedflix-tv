@@ -2,7 +2,7 @@ package com.jedflix.tv.data.trailer
 
 import com.jedflix.tv.data.tmdb.TmdbVideoDto
 
-/** Picks the YouTube clip the hosted 30s preview is keyed by. */
+/** Picks the YouTube clip the hosted 15s preview is keyed by. Prefers trailers, then teasers, then any YouTube video. */
 object TrailerPicker {
 
     fun youtubeKey(videos: List<TmdbVideoDto>): String? {
@@ -14,6 +14,9 @@ object TrailerPicker {
             ?: youtube.firstOrNull { it.isTeaser() && it.official && it.isEnglish() }?.key
             ?: youtube.firstOrNull { it.isTeaser() && it.isEnglish() }?.key
             ?: youtube.firstOrNull { it.isTeaser() }?.key
+            ?: youtube.firstOrNull { it.official && it.isEnglish() }?.key
+            ?: youtube.firstOrNull { it.isEnglish() }?.key
+            ?: youtube.first().key
     }
 
     private fun TmdbVideoDto.isTrailer() = type.equals(TYPE_TRAILER, ignoreCase = true)

@@ -18,7 +18,7 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 - Ship app versions by pushing `main` and publishing GitHub Releases, not by leaving release work unfinished.
 - Verify Android TV changes on the local emulator; do not treat untested cloud-agent diffs as ready.
 - Do not intercept D-pad Up/Down to scroll a shelf into view before focus; keep independent-rail focus as in 0.4.0.
-- Do not add a clip preprocessor or ffmpeg backend; trailer clips are served from the user's Go backend as progressive MP4s.
+- Generate trailer clips on the Linux box with clipgen (serial yt-dlp+ffmpeg job, logs on disk1); do not generate on the TV client or on poster-focus.
 
 ## Learned Workspace Facts
 
@@ -32,5 +32,5 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 - Each catalog shelf and detail rail (cast, seasons, episodes, More like this) keeps its own horizontal scroll; a visit starts at the first item, returning in that visit restores the last focused item by identity, and unfocused rails stay parked.
 - Billboard arrival focuses Play; Right at the end of a shelf does nothing; Left from the first title opens nav; Back on Detail pops to that title, Back on open nav closes the drawer, and Back on Home with the drawer closed does not exit the app.
 - Catalog shelves can be shown, hidden, and reordered in Settings; Watch History cannot be hidden or moved. Settings shows a few shelves until Show all, and expanding keeps that control in view.
-- Settings includes a quality profile (Max, Medium, Low). Low disables catalog trailer autoplay and is meant to disable high-res browse images. A focused poster autoplays a hosted 30s MP4 after 5s: prepare waits 1s so scrolling stays snappy, then the card morphs in-shelf to 16:9, neighbors shift, a transparent folded-J sits bottom-left, and after the clip the wide poster stays with a play icon until focus leaves. Clips are `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4`.
+- Settings includes a quality profile (Max, Medium, Low). Low disables catalog trailer autoplay and is meant to disable high-res browse images. A focused poster autoplays a hosted 15s MP4 after 5s: prepare waits 1s so scrolling stays snappy, then the card morphs in-shelf to 16:9, neighbors shift, a transparent folded-J sits bottom-left, and after the clip the wide poster stays with a play icon until focus leaves. Clips are 15s from ~1/3 into a TMDB YouTube video (trailer preferred), ≤5MB, stored at `/mnt/disk1/jedflix/tv-clips/{youtubeKey}.mp4` and served at `{TRAILER_CLIP_BASE_URL}/{youtubeKey}.mp4`. clipgen warms the Home catalog, not only Jed's Picks.
 - Stream search remaps TMDB episode numbers to scene/broadcast numbers when they differ, so the selected episode matches torrent listings.

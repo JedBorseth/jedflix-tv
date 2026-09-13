@@ -51,6 +51,16 @@ class TrailerPickerTest {
     }
 
     @Test
+    fun anyYoutubeWhenNoTrailerOrTeaser() {
+        assertEquals(
+            "clip",
+            TrailerPicker.youtubeKey(
+                listOf(video(key = "clip", type = "Clip", official = true, lang = "en")),
+            ),
+        )
+    }
+
+    @Test
     fun ignoresVimeoAndBlankKeys() {
         assertNull(
             TrailerPicker.youtubeKey(

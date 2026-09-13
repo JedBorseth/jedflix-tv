@@ -19,6 +19,9 @@ import (
 type Config struct {
 	// Version is reported by GET /health so a deploy can be confirmed from the TV.
 	Version string
+	// ClipDir holds the 15s trailer clips served at GET /clips/{youtubeKey}.mp4.
+	// Empty disables the route (every clip is a 404).
+	ClipDir string
 }
 
 // Server owns the router and the handlers behind it.
@@ -53,6 +56,8 @@ func (s *Server) Router() http.Handler {
 	}))
 
 	r.Get("/health", s.handleHealth)
+	r.Get("/clips/{file}", s.handleClip)
+	r.Head("/clips/{file}", s.handleClip)
 
 	return r
 }

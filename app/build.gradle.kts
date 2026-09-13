@@ -18,8 +18,8 @@ val tmdbApiKey: String =
         ?: ""
 val trailerClipBaseUrl: String =
     localProperties.getProperty("TRAILER_CLIP_BASE_URL")?.takeIf { it.isNotBlank() }
-        ?: System.getenv("TRAILER_CLIP_BASE_URL")
-        ?: ""
+        ?: System.getenv("TRAILER_CLIP_BASE_URL")?.takeIf { it.isNotBlank() }
+        ?: "https://borseth.ddns.net/tv-api/clips"
 // JedFlix TV API (server/ in this repo). Defaults to production so debug builds work unconfigured.
 val apiBaseUrl: String =
     localProperties.getProperty("API_BASE_URL")?.takeIf { it.isNotBlank() }

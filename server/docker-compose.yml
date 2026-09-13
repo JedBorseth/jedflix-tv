@@ -5,6 +5,14 @@
 # No host port is published. Caddy (in the jedflix compose project) reaches
 # this container as jedflix-tv-api:8080 over the shared jedflix_default network
 # and exposes it at https://<domain>/tv-api/.
+#
+# Trailer clips live on disk1 (not in the image):
+#   /mnt/disk1/jedflix/tv-clips/{youtubeKey}.mp4
+# Public URL: https://borseth.ddns.net/tv-api/clips/{youtubeKey}.mp4
+#
+# clipgen is a one-shot job (profile `clipgen`), not started by `up -d`:
+#   docker compose --profile clipgen run --rm clipgen --limit 1
+# Nightly cron: 0 4 * * * cd ~/jedflix-tv-api && docker compose --profile clipgen run --rm clipgen
 services:
   api:
     image: ghcr.io/jedborseth/jedflix-tv/api:${TV_API_TAG:-latest}
@@ -12,8 +20,30 @@ services:
     restart: unless-stopped
     environment:
       ADDR: ":8080"
+      CLIP_DIR: /clips
+    volumes:
+      - ${CLIP_HOST_DIR:-/mnt/disk1/jedflix/tv-clips}:/clips:ro
     networks:
       - jedflix
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  clipgen:
+    image: ghcr.io/jedborseth/jedflix-tv/api:${TV_API_TAG:-latest}
+    profiles: ["clipgen"]
+    user: "1000:1000"
+    environment:
+      CLIP_DIR: /clips
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      YTDLP_COOKIES: ${YTDLP_COOKIES:-}
+    volumes:
+      - ${CLIP_HOST_DIR:-/mnt/disk1/jedflix/tv-clips}:/clips
+    networks:
+      - jedflix
+    entrypoint: ["/app/clipgen"]
     logging:
       driver: json-file
       options:

@@ -221,7 +221,7 @@ class TrailerPreviewViewModel(
         const val PREPARE_DEBOUNCE_MS = TRAILER_PREVIEW_PREPARE_DEBOUNCE_MS
         const val READY_GRACE_MS = 2_000L
         const val MORPH_MS = TRAILER_PREVIEW_MORPH_MS
-        private const val CLIP_END_MS = 30_000L
+        private const val CLIP_END_MS = 15_000L
     }
 }
 

@@ -1,13 +1,13 @@
 package com.jedflix.tv.data.trailer
 
 /**
- * Hosted preview clips are progressive MP4s named `{youtubeKey}.mp4`.
+ * Hosted preview clips are progressive 15s MP4s named `{youtubeKey}.mp4`.
  *
  * `baseUrl` is the directory (no trailing slash required), e.g.
- * `https://api.example.com/clips` → `https://api.example.com/clips/dQw4w9WgXcQ.mp4`.
+ * `https://borseth.ddns.net/tv-api/clips` → `https://borseth.ddns.net/tv-api/clips/dQw4w9WgXcQ.mp4`.
  *
  * A blank `baseUrl` (or a URL that already ends in `.mp4`) uses that file as-is so the
- * catalog preview can be exercised before the clip host exists.
+ * catalog preview can be exercised without the clip host.
  */
 object TrailerClipUrls {
 
