@@ -17,6 +17,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.backend.BackendHealthState
 import com.jedflix.tv.data.update.AppUpdateState
 import com.jedflix.tv.data.update.InstallProgress
 import com.jedflix.tv.ui.theme.WarmWhite
@@ -26,6 +27,7 @@ import com.jedflix.tv.ui.theme.Zinc950
 @Composable
 fun AboutUpdateSection(
     state: AppUpdateState,
+    backend: BackendHealthState,
     onCheck: () -> Unit,
     onInstall: () -> Unit,
     onAllowInstalls: () -> Unit,
@@ -45,6 +47,13 @@ fun AboutUpdateSection(
             style = MaterialTheme.typography.bodyLarge,
             color = Zinc400,
             modifier = Modifier.testTag("settings-version"),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = backendStatus(backend),
+            style = MaterialTheme.typography.bodyLarge,
+            color = Zinc400,
+            modifier = Modifier.testTag("settings-server-status"),
         )
         Spacer(Modifier.height(10.dp))
         Text(
@@ -118,6 +127,13 @@ fun AboutUpdateSection(
             }
         }
     }
+}
+
+@Composable
+private fun backendStatus(backend: BackendHealthState): String = when (backend) {
+    BackendHealthState.Unknown, BackendHealthState.Checking -> stringResource(R.string.settings_server_checking)
+    is BackendHealthState.Online -> stringResource(R.string.settings_server_online, backend.version.take(7))
+    BackendHealthState.Offline -> stringResource(R.string.settings_server_offline)
 }
 
 @Composable

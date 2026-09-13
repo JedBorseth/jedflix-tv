@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                         playbackSession = app.playbackSession,
                         library = app.userLibrary,
                         appUpdateManager = app.appUpdateManager,
+                        backendHealth = app.backendHealth,
                     )
                 }
             }

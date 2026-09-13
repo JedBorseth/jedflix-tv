@@ -65,6 +65,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
+import com.jedflix.tv.data.backend.BackendHealthMonitor
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.CatalogSection
@@ -87,6 +88,7 @@ fun SettingsScreen(
     settingsStore: SettingsStore,
     library: UserLibraryRepository,
     appUpdateManager: AppUpdateManager,
+    backendHealth: BackendHealthMonitor,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
     focusApiKey: Boolean = false,
@@ -94,6 +96,7 @@ fun SettingsScreen(
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(settingsStore))
     val state by viewModel.state.collectAsStateWithLifecycle()
     val updateState by appUpdateManager.state.collectAsStateWithLifecycle()
+    val backendState by backendHealth.state.collectAsStateWithLifecycle()
     val fieldFocus = remember { FocusRequester() }
     val firstShelfFocus = remember { FocusRequester() }
     val qrActionFocus = remember { FocusRequester() }
@@ -104,6 +107,11 @@ fun SettingsScreen(
             bringKeyIntoView.bringIntoView()
         }
         runCatching { fieldFocus.requestFocus() }
+    }
+
+    // Refresh API reachability on every Settings visit; the monitor dedupes in-flight checks.
+    LaunchedEffect(backendHealth) {
+        backendHealth.check()
     }
 
     LaunchedEffect(state.qrPairing) {
@@ -215,7 +223,11 @@ fun SettingsScreen(
                 Spacer(Modifier.height(48.dp))
                 AboutUpdateSection(
                     state = updateState,
-                    onCheck = { appUpdateManager.check(force = true) },
+                    backend = backendState,
+                    onCheck = {
+                        appUpdateManager.check(force = true)
+                        backendHealth.check()
+                    },
                     onInstall = appUpdateManager::downloadAndInstall,
                     onAllowInstalls = appUpdateManager::requestUnknownSourcesPermission,
                     onCancelInstall = appUpdateManager::cancelInstall,

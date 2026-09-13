@@ -41,6 +41,9 @@
 
     <string name="settings_about_heading">About</string>
     <string name="settings_version">Version %1$s</string>
+    <string name="settings_server_checking">Server: checking…</string>
+    <string name="settings_server_online">Server: online (%1$s)</string>
+    <string name="settings_server_offline">Server: unreachable</string>
     <string name="settings_update_checking">Checking for updates…</string>
     <string name="settings_update_current">You\'re up to date.</string>
     <string name="settings_update_available">Version %1$s is available</string>

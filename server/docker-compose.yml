@@ -1,0 +1,26 @@
+# Runs on the Linux box next to the JedFlix stack. Copy this file to
+# ~/jedflix-tv-api/docker-compose.yml once; CI then does
+# `docker compose pull && docker compose up -d` there on every main push.
+#
+# No host port is published. Caddy (in the jedflix compose project) reaches
+# this container as jedflix-tv-api:8080 over the shared jedflix_default network
+# and exposes it at https://<domain>/tv-api/.
+services:
+  api:
+    image: ghcr.io/jedborseth/jedflix-tv/api:${TV_API_TAG:-latest}
+    container_name: jedflix-tv-api
+    restart: unless-stopped
+    environment:
+      ADDR: ":8080"
+    networks:
+      - jedflix
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  jedflix:
+    external: true
+    name: ${JEDFLIX_NETWORK:-jedflix_default}

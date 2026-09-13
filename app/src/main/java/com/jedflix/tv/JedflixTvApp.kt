@@ -7,6 +7,8 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.jedflix.tv.data.backend.BackendHealthClient
+import com.jedflix.tv.data.backend.BackendHealthMonitor
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.RoomUserLibraryRepository
 import com.jedflix.tv.data.library.UserLibraryRepository
@@ -49,6 +51,12 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
             installer = ApkInstaller(this),
             scope = applicationScope,
             currentVersion = BuildConfig.VERSION_NAME,
+        )
+    }
+    val backendHealth: BackendHealthMonitor by lazy {
+        BackendHealthMonitor(
+            client = BackendHealthClient(BuildConfig.API_BASE_URL),
+            scope = applicationScope,
         )
     }
 

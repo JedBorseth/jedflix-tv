@@ -20,6 +20,11 @@ val trailerClipBaseUrl: String =
     localProperties.getProperty("TRAILER_CLIP_BASE_URL")?.takeIf { it.isNotBlank() }
         ?: System.getenv("TRAILER_CLIP_BASE_URL")
         ?: ""
+// JedFlix TV API (server/ in this repo). Defaults to production so debug builds work unconfigured.
+val apiBaseUrl: String =
+    localProperties.getProperty("API_BASE_URL")?.takeIf { it.isNotBlank() }
+        ?: System.getenv("API_BASE_URL")?.takeIf { it.isNotBlank() }
+        ?: "https://borseth.ddns.net/tv-api"
 
 android {
     namespace = "com.jedflix.tv"
@@ -36,6 +41,7 @@ android {
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
         buildConfigField("String", "TRAILER_CLIP_BASE_URL", "\"$trailerClipBaseUrl\"")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     signingConfigs {

@@ -22,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.jedflix.tv.data.backend.BackendHealthMonitor
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
@@ -51,6 +52,7 @@ fun JedflixNavHost(
     playbackSession: PlaybackSession,
     library: UserLibraryRepository,
     appUpdateManager: AppUpdateManager,
+    backendHealth: BackendHealthMonitor,
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -173,6 +175,7 @@ fun JedflixNavHost(
                     settingsStore = settingsStore,
                     library = library,
                     appUpdateManager = appUpdateManager,
+                    backendHealth = backendHealth,
                     focusApiKey = entry.arguments?.getBoolean("focusKey") == true,
                     onSectionSelected = ::openSection,
                     onSearch = ::openSearch,

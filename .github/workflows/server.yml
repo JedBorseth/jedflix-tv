@@ -1,0 +1,124 @@
+name: Server
+
+# Android-only pushes do not touch this workflow: it runs only when server/
+# or this file changes on main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/server.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - ".github/workflows/server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: server-deploy
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/jedborseth/jedflix-tv/api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Vet and test
+        working-directory: server
+        run: |
+          go vet ./...
+          go test ./...
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            VERSION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Pull latest image and restart on server
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_DIR: ${{ vars.TV_API_DIR || '/home/jedborseth/jedflix-tv-api' }}
+          GIT_SHA: ${{ github.sha }}
+          # Job-scoped token is enough to pull this repo's GHCR package.
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          envs: APP_DIR,GIT_SHA,GHCR_USER,GHCR_TOKEN
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${APP_DIR}"
+            if [ -n "${GHCR_TOKEN}" ]; then
+              echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            fi
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f >/dev/null
+            echo "== Waiting for jedflix-tv-api to report healthy =="
+            for i in $(seq 1 20); do
+              status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-api 2>/dev/null || echo "missing")
+              if [ "$status" = "healthy" ]; then
+                docker exec jedflix-tv-api curl -fsS http://127.0.0.1:8080/health
+                echo
+                echo "deployed ${GIT_SHA}"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "container never became healthy (status: $status)"
+            docker logs --tail 50 jedflix-tv-api || true
+            exit 1
