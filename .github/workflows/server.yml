@@ -107,11 +107,12 @@ jobs:
             fi
             docker compose pull
             docker compose up -d --remove-orphans
+            docker logout ghcr.io >/dev/null 2>&1 || true
             docker image prune -f >/dev/null
             echo "== Waiting for jedflix-tv-api to report healthy =="
             for i in $(seq 1 20); do
-              status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-api 2>/dev/null || echo "missing")
-              if [ "$status" = "healthy" ]; then
+              health_status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-api 2>/dev/null || echo "missing")
+              if [ "$health_status" = "healthy" ]; then
                 docker exec jedflix-tv-api curl -fsS http://127.0.0.1:8080/health
                 echo
                 echo "deployed ${GIT_SHA}"
@@ -119,6 +120,6 @@ jobs:
               fi
               sleep 3
             done
-            echo "container never became healthy (status: $status)"
+            echo "container never became healthy (status: $health_status)"
             docker logs --tail 50 jedflix-tv-api || true
             exit 1
