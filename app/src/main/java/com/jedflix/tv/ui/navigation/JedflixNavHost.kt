@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,6 +25,7 @@ import androidx.navigation.navArgument
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.PlaybackSession
+import com.jedflix.tv.data.settings.QualityProfile
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
@@ -37,7 +39,9 @@ import com.jedflix.tv.ui.search.SearchScreen
 import com.jedflix.tv.ui.settings.SettingsScreen
 import com.jedflix.tv.ui.settings.UpdatePromptOverlay
 import com.jedflix.tv.ui.splash.SplashScreen
+import com.jedflix.tv.ui.splash.SplashStingEffect
 import com.jedflix.tv.ui.streams.StreamPickerScreen
+import com.jedflix.tv.ui.images.LocalBrowseQuality
 
 @Composable
 fun JedflixNavHost(
@@ -99,6 +103,7 @@ fun JedflixNavHost(
         }
     }
 
+    val browseQuality by settingsStore.qualityProfile.collectAsStateWithLifecycle(QualityProfile.Max)
     val hidePrompt = currentRoute == null ||
         currentRoute == Routes.SPLASH ||
         currentRoute == Routes.SETTINGS ||
@@ -106,7 +111,9 @@ fun JedflixNavHost(
         currentRoute == Routes.STREAMS
     val showPrompt = updateState.showLaunchPrompt && updateState.available != null && !hidePrompt
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalBrowseQuality provides browseQuality) {
+        SplashStingEffect()
+        Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
@@ -260,6 +267,7 @@ fun JedflixNavHost(
                 onCancel = appUpdateManager::cancelInstall,
                 onLater = appUpdateManager::dismissPrompt,
             )
+        }
         }
     }
 }

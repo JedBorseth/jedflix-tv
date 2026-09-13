@@ -1,5 +1,7 @@
 package com.jedflix.tv.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,16 +15,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryRows
 import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.MediaTitle
+import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_MORPH_MS
+import com.jedflix.tv.data.trailer.TrailerPreviewPhase
+import com.jedflix.tv.data.trailer.attachesPlayer
+import com.jedflix.tv.data.trailer.visible
 import com.jedflix.tv.ui.focus.RailRestore
 import com.jedflix.tv.ui.focus.independentRail
 import com.jedflix.tv.ui.focus.optionalFocusRequester
@@ -38,7 +44,6 @@ fun CatalogRowView(
     modifier: Modifier = Modifier,
     progressFor: ((MediaTitle) -> Float?)? = null,
     onItemFocused: ((index: Int, title: MediaTitle) -> Unit)? = null,
-    onItemBounds: ((Rect) -> Unit)? = null,
     onItemClick: ((MediaTitle) -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     enterFocusRequester: FocusRequester? = null,
@@ -50,6 +55,11 @@ fun CatalogRowView(
     upFocusRequester: FocusRequester? = null,
     downFocusRequester: FocusRequester? = null,
     stateKey: String = row.id,
+    previewTitleKey: String? = null,
+    previewPhase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
+    previewPlayer: ExoPlayer? = null,
+    previewLogoUrl: String? = null,
+    onPreviewOpened: () -> Unit = {},
 ) {
     val heading = when (row.id) {
         LibraryRows.CONTINUE_WATCHING -> stringResource(R.string.row_continue_watching)
@@ -78,10 +88,26 @@ fun CatalogRowView(
                 .independentRail(enter),
         ) {
             itemsIndexed(row.items, key = { _, item -> item.key }) { index, item ->
+                val previewing = item.key == previewTitleKey &&
+                    previewPhase != TrailerPreviewPhase.Hidden
+                val expanded = previewing && previewPhase.visible
                 PosterCard(
                     title = item,
                     progress = if (row.showProgress) progressFor?.invoke(item) else null,
+                    previewPlayer = previewPlayer.takeIf {
+                        previewing && previewPhase.attachesPlayer
+                    },
+                    expanded = expanded,
+                    playing = previewing && previewPhase == TrailerPreviewPhase.Playing,
+                    logoUrl = previewLogoUrl.takeIf { previewing },
+                    onPreviewOpened = onPreviewOpened,
                     modifier = Modifier
+                        .animateItem(
+                            placementSpec = tween(
+                                TRAILER_PREVIEW_MORPH_MS,
+                                easing = FastOutSlowInEasing,
+                            ),
+                        )
                         .optionalFocusRequester(if (item.key == enterKey) enter else null)
                         .optionalFocusRequester(
                             if (index == 0) firstItemFocusRequester else null,
@@ -101,7 +127,6 @@ fun CatalogRowView(
                         lastKey = item.key
                         onItemFocused?.invoke(index, item)
                     },
-                    onFocusedBounds = onItemBounds,
                     onClick = { onItemClick?.invoke(item) },
                 )
             }

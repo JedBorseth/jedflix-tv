@@ -89,17 +89,30 @@ class TrailerPreviewStateTest {
     }
 
     @Test
-    fun clipEndResetsSoTheSamePosterDoesNotReplay() {
+    fun clipEndKeepsWideStillUntilFocusLeaves() {
         var state = TrailerPreviewState().reduce(TrailerPreviewEvent.Focused("movie-1"))
         state = state.reduce(TrailerPreviewEvent.ClipReady("movie-1", CLIP))
         state = state.reduce(TrailerPreviewEvent.PlayerReady("movie-1"))
         state = state.reduce(TrailerPreviewEvent.HoldElapsed)
         state = state.reduce(TrailerPreviewEvent.MorphFinished)
         state = state.reduce(TrailerPreviewEvent.ClipEnded)
-        assertEquals(TrailerPreviewState(), state)
-        state = TrailerPreviewState().reduce(TrailerPreviewEvent.Focused("movie-1"))
-        state = state.reduce(TrailerPreviewEvent.ClipEnded)
-        assertEquals(TrailerPreviewPhase.Preparing, state.phase)
+        assertEquals(TrailerPreviewPhase.Ended, state.phase)
+        assertEquals("movie-1", state.titleKey)
+        assertTrue(state.visible)
+        val stayed = state.reduce(TrailerPreviewEvent.Focused("movie-1"))
+        assertEquals(TrailerPreviewPhase.Ended, stayed.phase)
+        val next = state.reduce(TrailerPreviewEvent.Focused("movie-2"))
+        assertEquals(TrailerPreviewPhase.Preparing, next.phase)
+        assertEquals("movie-2", next.titleKey)
+    }
+
+    @Test
+    fun playerSurfaceAttachesOnlyWhileOpeningOrPlaying() {
+        assertFalse(TrailerPreviewPhase.Hidden.attachesPlayer)
+        assertFalse(TrailerPreviewPhase.Preparing.attachesPlayer)
+        assertTrue(TrailerPreviewPhase.Opening.attachesPlayer)
+        assertTrue(TrailerPreviewPhase.Playing.attachesPlayer)
+        assertFalse(TrailerPreviewPhase.Ended.attachesPlayer)
     }
 
     @Test

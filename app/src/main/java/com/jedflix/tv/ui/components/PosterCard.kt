@@ -1,31 +1,45 @@
 package com.jedflix.tv.ui.components
 
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Glow
@@ -35,46 +49,69 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.tmdb.MediaTitle
+import com.jedflix.tv.data.tmdb.tmdbBrowsePosterSize
+import com.jedflix.tv.data.tmdb.tmdbImageUrlAtSize
+import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_MORPH_MS
+import com.jedflix.tv.ui.images.LocalBrowseQuality
+import com.jedflix.tv.ui.images.fitDp
 import com.jedflix.tv.ui.theme.JedflixRed
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc800
+import kotlinx.coroutines.delay
 
 val PosterWidth = 128.dp
 val PosterHeight = 192.dp
+val PosterPreviewWidth = PosterHeight * 16f / 9f
 private val PosterShape = RoundedCornerShape(6.dp)
+private val LogoOnVideoFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            1f, 0f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f, 0f,
+            0f, 0f, 1f, 0f, 0f,
+            1f, 0f, 0f, 0f, 0f,
+        ),
+    ),
+)
 
 @Composable
 fun PosterCard(
     title: MediaTitle,
     modifier: Modifier = Modifier,
     progress: Float? = null,
+    previewPlayer: ExoPlayer? = null,
+    expanded: Boolean = false,
+    playing: Boolean = false,
+    logoUrl: String? = null,
+    onPreviewOpened: () -> Unit = {},
     onFocused: (() -> Unit)? = null,
-    onFocusedBounds: ((Rect) -> Unit)? = null,
     onClick: () -> Unit = {},
 ) {
     val placeholder = ColorPainter(Zinc800)
-    var focused by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val posterUrl = tmdbImageUrlAtSize(
+        title.posterUrl,
+        tmdbBrowsePosterSize(LocalBrowseQuality.current),
+    )
+    val width by animateDpAsState(
+        targetValue = if (expanded) PosterPreviewWidth else PosterWidth,
+        animationSpec = tween(TRAILER_PREVIEW_MORPH_MS, easing = FastOutSlowInEasing),
+        label = "poster-preview-width",
+    )
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            delay(TRAILER_PREVIEW_MORPH_MS.toLong())
+            onPreviewOpened()
+        }
+    }
     Surface(
         onClick = onClick,
         modifier = modifier
-            .width(PosterWidth)
+            .width(width)
             .height(PosterHeight)
             .testTag("poster-card")
             .onFocusChanged {
-                focused = it.isFocused
                 if (it.isFocused) onFocused?.invoke()
-            }
-            .onGloballyPositioned { coords ->
-                if (!focused) return@onGloballyPositioned
-                val topLeft = coords.positionInWindow()
-                onFocusedBounds?.invoke(
-                    Rect(
-                        topLeft.x,
-                        topLeft.y,
-                        topLeft.x + coords.size.width,
-                        topLeft.y + coords.size.height,
-                    ),
-                )
             },
         shape = ClickableSurfaceDefaults.shape(shape = PosterShape),
         colors = ClickableSurfaceDefaults.colors(
@@ -82,7 +119,10 @@ fun PosterCard(
             focusedContainerColor = Zinc800,
             pressedContainerColor = Zinc800,
         ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f, pressedScale = 1.04f),
+        scale = ClickableSurfaceDefaults.scale(
+            focusedScale = if (expanded) 1f else 1.08f,
+            pressedScale = if (expanded) 1f else 1.04f,
+        ),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(border = BorderStroke(3.dp, WarmWhite), shape = PosterShape),
         ),
@@ -90,10 +130,31 @@ fun PosterCard(
             focusedGlow = Glow(elevationColor = Color.White.copy(alpha = 0.35f), elevation = 14.dp),
         ),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().clip(PosterShape)) {
+            if (previewPlayer != null) {
+                AndroidView(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = if (playing) 1f else 0f }
+                        .focusProperties { canFocus = false },
+                    factory = { ctx ->
+                        (LayoutInflater.from(ctx).inflate(R.layout.trailer_preview_player, null) as PlayerView).apply {
+                            player = previewPlayer
+                            isFocusable = false
+                            isClickable = false
+                            descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                        }
+                    },
+                    update = { view ->
+                        if (view.player !== previewPlayer) view.player = previewPlayer
+                    },
+                    onRelease = { view -> view.player = null },
+                )
+            }
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(title.posterUrl)
+                    .data(posterUrl)
+                    .fitDp(density, PosterPreviewWidth, PosterHeight)
                     .crossfade(true)
                     .build(),
                 contentDescription = stringResource(R.string.cd_poster, title.title),
@@ -101,9 +162,14 @@ fun PosterCard(
                 placeholder = placeholder,
                 error = placeholder,
                 fallback = placeholder,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = if (playing) 0f else 1f },
             )
-            if (progress != null && progress > 0f) {
+            if (playing) {
+                PreviewWatermark(logoUrl = logoUrl)
+            }
+            if (progress != null && progress > 0f && !playing) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -120,5 +186,35 @@ fun PosterCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BoxScope.PreviewWatermark(logoUrl: String?) {
+    val watermark = Modifier
+        .align(Alignment.BottomStart)
+        .padding(start = 10.dp, bottom = 8.dp)
+    if (logoUrl != null) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(logoUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            modifier = watermark
+                .height(32.dp)
+                .widthIn(max = 148.dp),
+        )
+    } else {
+        Image(
+            painter = painterResource(R.drawable.logo),
+            contentDescription = null,
+            contentScale = ContentScale.Fit,
+            colorFilter = LogoOnVideoFilter,
+            modifier = watermark
+                .height(28.dp)
+                .width(28.dp),
+        )
     }
 }

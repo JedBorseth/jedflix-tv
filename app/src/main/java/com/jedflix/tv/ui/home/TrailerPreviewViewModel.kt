@@ -20,6 +20,7 @@ import com.jedflix.tv.data.settings.QualityProfile
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.data.trailer.TRAILER_PREVIEW_MORPH_MS
 import com.jedflix.tv.data.trailer.TrailerClipUrls
 import com.jedflix.tv.data.trailer.TrailerPreviewEvent
 import com.jedflix.tv.data.trailer.TrailerPreviewPhase
@@ -36,6 +37,7 @@ import kotlinx.coroutines.launch
 data class TrailerPreviewUi(
     val title: MediaTitle? = null,
     val phase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
+    val logoUrl: String? = null,
 )
 
 class TrailerPreviewViewModel(
@@ -52,6 +54,7 @@ class TrailerPreviewViewModel(
 
     private var machine = TrailerPreviewState()
     private var focusedTitle: MediaTitle? = null
+    private var logoUrl: String? = null
     private var quality: QualityProfile = QualityProfile.Max
     private var holdJob: Job? = null
     private var resolveJob: Job? = null
@@ -64,6 +67,7 @@ class TrailerPreviewViewModel(
                 Player.STATE_ENDED -> {
                     if (machine.phase == TrailerPreviewPhase.Playing) {
                         dispatch(TrailerPreviewEvent.ClipEnded)
+                        stopPlayer()
                     }
                 }
             }
@@ -85,7 +89,7 @@ class TrailerPreviewViewModel(
     }
 
     fun onTitleFocused(title: MediaTitle) {
-        if (quality == QualityProfile.Low || clipBaseUrl.isBlank()) {
+        if (quality == QualityProfile.Low) {
             reset()
             return
         }
@@ -93,6 +97,7 @@ class TrailerPreviewViewModel(
             !machine.failed &&
             machine.phase != TrailerPreviewPhase.Hidden
         focusedTitle = title
+        if (!keepGoing) logoUrl = null
         dispatch(TrailerPreviewEvent.Focused(title.key))
         if (keepGoing) return
         stopPlayer()
@@ -112,6 +117,7 @@ class TrailerPreviewViewModel(
         holdJob = null
         resolveJob = null
         focusedTitle = null
+        logoUrl = null
         stopPlayer()
         dispatch(TrailerPreviewEvent.Reset)
     }
@@ -132,9 +138,19 @@ class TrailerPreviewViewModel(
             dispatch(TrailerPreviewEvent.HoldExpiredUnready)
         }
         resolveJob = viewModelScope.launch {
-            val youtubeKey = tmdb.loadTrailerYoutubeKey(title.mediaType, title.id)
+            launch {
+                val logo = tmdb.loadTitleLogoUrl(title.mediaType, title.id)
+                if (machine.titleKey != title.key) return@launch
+                logoUrl = logo
+                publish()
+            }
+            val url = if (TrailerClipUrls.usesStandIn(clipBaseUrl)) {
+                TrailerClipUrls.url(clipBaseUrl)
+            } else {
+                val youtubeKey = tmdb.loadTrailerYoutubeKey(title.mediaType, title.id)
+                youtubeKey?.let { TrailerClipUrls.url(clipBaseUrl, it) }
+            }
             if (machine.titleKey != title.key) return@launch
-            val url = youtubeKey?.let { TrailerClipUrls.url(clipBaseUrl, it) }
             if (url == null) {
                 dispatch(TrailerPreviewEvent.PlayerFailed)
                 return@launch
@@ -178,7 +194,7 @@ class TrailerPreviewViewModel(
 
     private fun publish() {
         val title = focusedTitle?.takeIf { it.key == machine.titleKey }
-        _ui.value = TrailerPreviewUi(title = title, phase = machine.phase)
+        _ui.value = TrailerPreviewUi(title = title, phase = machine.phase, logoUrl = logoUrl)
     }
 
     class Factory(
@@ -195,7 +211,7 @@ class TrailerPreviewViewModel(
     companion object {
         const val HOLD_MS = 5_000L
         const val READY_GRACE_MS = 2_000L
-        const val MORPH_MS = 450
+        const val MORPH_MS = TRAILER_PREVIEW_MORPH_MS
         private const val CLIP_END_MS = 30_000L
     }
 }

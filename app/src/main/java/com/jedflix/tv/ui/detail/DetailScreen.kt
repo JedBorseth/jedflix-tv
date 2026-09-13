@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +81,8 @@ import com.jedflix.tv.data.tmdb.TitleDetails
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import com.jedflix.tv.data.tmdb.TvEpisode
 import com.jedflix.tv.data.tmdb.TvSeason
+import com.jedflix.tv.data.tmdb.tmdbBrowsePosterSize
+import com.jedflix.tv.data.tmdb.tmdbImageUrlAtSize
 import com.jedflix.tv.ui.components.BillboardBackdrop
 import com.jedflix.tv.ui.components.CatalogRowView
 import com.jedflix.tv.ui.components.ContentStartPadding
@@ -93,6 +96,8 @@ import com.jedflix.tv.ui.focus.optionalFocusRequester
 import com.jedflix.tv.ui.focus.railItemFocus
 import com.jedflix.tv.ui.focus.rememberRailListState
 import com.jedflix.tv.ui.home.ErrorKind
+import com.jedflix.tv.ui.images.LocalBrowseQuality
+import com.jedflix.tv.ui.images.fitDp
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc300
@@ -362,7 +367,13 @@ private fun DetailHero(
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(title.posterUrl)
+                    .data(
+                        tmdbImageUrlAtSize(
+                            title.posterUrl,
+                            tmdbBrowsePosterSize(LocalBrowseQuality.current),
+                        ),
+                    )
+                    .fitDp(LocalDensity.current, 160.dp, 240.dp)
                     .crossfade(true)
                     .build(),
                 contentDescription = stringResource(R.string.cd_poster, title.title),
@@ -549,6 +560,7 @@ private fun CastCard(member: CastMember, modifier: Modifier = Modifier) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(member.profileUrl)
+                    .fitDp(LocalDensity.current, 110.dp, 150.dp)
                     .crossfade(true)
                     .build(),
                 contentDescription = member.name,
@@ -713,6 +725,7 @@ private fun EpisodeCard(
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(episode.stillUrl)
+                    .fitDp(LocalDensity.current, 220.dp, 124.dp)
                     .crossfade(true)
                     .build(),
                 contentDescription = episode.title,

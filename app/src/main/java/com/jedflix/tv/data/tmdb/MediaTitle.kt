@@ -78,6 +78,7 @@ const val POSTER_SIZE = "w500"
 const val BACKDROP_SIZE = "w1280"
 const val PROFILE_SIZE = "w185"
 const val STILL_SIZE = "w300"
+const val LOGO_SIZE = "w300"
 
 fun tmdbImageUrl(path: String?, size: String): String? =
     path?.takeIf { it.isNotBlank() }?.let { "$IMAGE_BASE/$size$it" }

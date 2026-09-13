@@ -50,6 +50,13 @@ interface TmdbApi {
         @Path("id") id: Int,
     ): TmdbVideosDto
 
+    @GET("{mediaType}/{id}/images")
+    suspend fun images(
+        @Path("mediaType") mediaType: String,
+        @Path("id") id: Int,
+        @Query("include_image_language") includeImageLanguage: String = "en,null",
+    ): TmdbImagesDto
+
     @GET("tv/{id}/season/{season}")
     suspend fun seasonEpisodes(
         @Path("id") id: Int,

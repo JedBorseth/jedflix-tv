@@ -5,7 +5,18 @@ enum class TrailerPreviewPhase {
     Preparing,
     Opening,
     Playing,
+    Ended,
 }
+
+val TrailerPreviewPhase.visible: Boolean
+    get() = this == TrailerPreviewPhase.Opening ||
+        this == TrailerPreviewPhase.Playing ||
+        this == TrailerPreviewPhase.Ended
+
+val TrailerPreviewPhase.attachesPlayer: Boolean
+    get() = this == TrailerPreviewPhase.Opening || this == TrailerPreviewPhase.Playing
+
+const val TRAILER_PREVIEW_MORPH_MS = 450
 
 data class TrailerPreviewState(
     val titleKey: String? = null,
@@ -15,7 +26,7 @@ data class TrailerPreviewState(
     val failed: Boolean = false,
     val phase: TrailerPreviewPhase = TrailerPreviewPhase.Hidden,
 ) {
-    val visible: Boolean get() = phase == TrailerPreviewPhase.Opening || phase == TrailerPreviewPhase.Playing
+    val visible: Boolean get() = phase.visible
 }
 
 sealed interface TrailerPreviewEvent {
@@ -64,7 +75,7 @@ fun TrailerPreviewState.reduce(event: TrailerPreviewEvent): TrailerPreviewState 
     }
     TrailerPreviewEvent.ClipEnded -> {
         if (phase != TrailerPreviewPhase.Playing) this
-        else TrailerPreviewState()
+        else copy(phase = TrailerPreviewPhase.Ended, playerReady = false)
     }
     TrailerPreviewEvent.Reset -> TrailerPreviewState()
 }

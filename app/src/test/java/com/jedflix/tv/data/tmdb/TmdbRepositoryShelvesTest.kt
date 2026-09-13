@@ -237,6 +237,21 @@ class TmdbRepositoryShelvesTest {
         assertEquals(1, api.videosCalls.size)
     }
 
+    @Test
+    fun titleLogoUrlIsCachedAndPicksEnglishPng() = runTest {
+        val api = FakeTmdbApi()
+        api.imagesById["movie" to 10] = TmdbImagesDto(
+            logos = listOf(
+                TmdbImageDto(filePath = "/fr.png", iso6391 = "fr", voteAverage = 9.0),
+                TmdbImageDto(filePath = "/en.png", iso6391 = "en", voteAverage = 1.0),
+            ),
+        )
+        val repo = TmdbRepository(api, UnconfinedTestDispatcher(testScheduler))
+        assertEquals("https://image.tmdb.org/t/p/w300/en.png", repo.loadTitleLogoUrl(MediaType.MOVIE, 10))
+        assertEquals("https://image.tmdb.org/t/p/w300/en.png", repo.loadTitleLogoUrl(MediaType.MOVIE, 10))
+        assertEquals(1, api.imagesCalls.size)
+    }
+
     private fun page(vararg items: TmdbMediaDto) = TmdbPagedResponse(page = 1, results = items.toList())
 
     private fun media(id: Int, title: String, type: String = "movie") = TmdbMediaDto(
@@ -274,6 +289,8 @@ private class FakeTmdbApi(
     val tvLists = mutableMapOf<String, List<TmdbMediaDto>>()
     val videosById = mutableMapOf<Pair<String, Int>, TmdbVideosDto>()
     val videosCalls = CopyOnWriteArrayList<Pair<String, Int>>()
+    val imagesById = mutableMapOf<Pair<String, Int>, TmdbImagesDto>()
+    val imagesCalls = CopyOnWriteArrayList<Pair<String, Int>>()
 
     private suspend fun track(): CloseablePermit {
         val now = inFlight.incrementAndGet()
@@ -327,6 +344,17 @@ private class FakeTmdbApi(
         videosCalls += mediaType to id
         track().use {
             return videosById[mediaType to id] ?: TmdbVideosDto()
+        }
+    }
+
+    override suspend fun images(
+        mediaType: String,
+        id: Int,
+        includeImageLanguage: String,
+    ): TmdbImagesDto {
+        imagesCalls += mediaType to id
+        track().use {
+            return imagesById[mediaType to id] ?: TmdbImagesDto()
         }
     }
 

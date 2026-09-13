@@ -21,6 +21,7 @@ class TmdbRepository(
     private val cache = ConcurrentHashMap<CatalogSection, Catalog>()
     private val detailsCache = ConcurrentHashMap<String, TitleDetails>()
     private val trailerCache = ConcurrentHashMap<String, String>()
+    private val logoCache = ConcurrentHashMap<String, String>()
     private val shelfCache = ConcurrentHashMap<String, CachedShelf>()
     private val inFlight = ConcurrentHashMap<String, Mutex>()
     private val requestPermits = Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -101,6 +102,27 @@ class TmdbRepository(
                 val picked = TrailerPicker.youtubeKey(dto.results)
                 trailerCache[key] = picked.orEmpty()
                 picked
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                null
+            }
+        }
+    }
+
+    /**
+     * Transparent PNG/WebP title logo, or null when TMDB has none.
+     * Empty-string cache entries remember a confirmed miss.
+     */
+    suspend fun loadTitleLogoUrl(type: MediaType, id: Int): String? {
+        val key = "${type.apiValue}-$id"
+        logoCache[key]?.let { return it.ifEmpty { null } }
+        return withContext(ioDispatcher) {
+            try {
+                val dto = throttled { api.images(type.apiValue, id) }
+                val path = TitleLogoPicker.path(dto.logos)
+                val url = tmdbImageUrl(path, LOGO_SIZE)
+                logoCache[key] = url.orEmpty()
+                url
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 null

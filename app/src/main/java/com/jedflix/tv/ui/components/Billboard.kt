@@ -1,7 +1,5 @@
 package com.jedflix.tv.ui.components
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -26,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +36,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -44,8 +48,12 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.tmdb.MediaTitle
+import com.jedflix.tv.data.tmdb.tmdbBrowseBackdropSize
+import com.jedflix.tv.data.tmdb.tmdbImageUrlAtSize
 import com.jedflix.tv.ui.focus.optionalFocusRequester
 import com.jedflix.tv.ui.focus.railItemFocus
+import com.jedflix.tv.ui.images.LocalBrowseQuality
+import com.jedflix.tv.ui.images.fitPixels
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc300
@@ -83,25 +91,30 @@ fun BillboardBackdrop(
                 },
             ),
     ) {
-        Crossfade(
-            targetState = title?.backdropUrl,
-            animationSpec = tween(600),
-            label = "backdrop",
-        ) { url ->
-            if (url != null) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(url)
-                        .crossfade(false)
-                        .build(),
-                    contentDescription = title?.let { stringResource(R.string.cd_backdrop, it.title) },
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(Modifier.fillMaxSize().background(Zinc950))
-            }
+        var layoutPx by remember { mutableStateOf(IntSize.Zero) }
+        val backdropUrl = tmdbImageUrlAtSize(
+            title?.backdropUrl,
+            tmdbBrowseBackdropSize(LocalBrowseQuality.current),
+        )
+        if (backdropUrl != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(backdropUrl)
+                    .fitPixels(
+                        if (layoutPx.width > 0) layoutPx.width else 1920,
+                        if (layoutPx.height > 0) layoutPx.height else 800,
+                    )
+                    .crossfade(true)
+                    .build(),
+                contentDescription = title?.let { stringResource(R.string.cd_backdrop, it.title) },
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { layoutPx = it },
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(Zinc950))
         }
         // Left fade keeps the title readable; bottom fade lets rows scroll over the image.
         Box(

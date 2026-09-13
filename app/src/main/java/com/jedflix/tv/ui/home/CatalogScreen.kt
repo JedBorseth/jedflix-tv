@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -57,7 +56,6 @@ import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogSection
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
-import com.jedflix.tv.data.trailer.TrailerPreviewPhase
 import com.jedflix.tv.ui.components.BillboardBackdrop
 import com.jedflix.tv.ui.components.BillboardInfo
 import com.jedflix.tv.ui.components.CatalogRowView
@@ -68,9 +66,12 @@ import com.jedflix.tv.ui.focus.RailRestore
 import com.jedflix.tv.ui.theme.JedflixIcons
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc400
+import kotlinx.coroutines.delay
 
 /** Fraction of the viewport height where a focused row (other than the first) is pinned. */
 private const val ROW_PIVOT = 0.16f
+/** Wait for focus to settle before swapping the billboard backdrop. */
+private const val BILLBOARD_HERO_SETTLE_MS = 350L
 
 @Composable
 fun CatalogScreen(
@@ -188,6 +189,12 @@ private fun CatalogContent(
         ?: return
     var hero: MediaTitle by remember { mutableStateOf(fallbackHero) }
     var backdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    var pendingBackdrop: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    LaunchedEffect(pendingBackdrop.key) {
+        if (backdrop.key == pendingBackdrop.key) return@LaunchedEffect
+        delay(BILLBOARD_HERO_SETTLE_MS)
+        backdrop = pendingBackdrop
+    }
     val restoreTarget = remember(catalog.rows.map { it.id }) {
         RailRestore.catalogTarget(restoredRowId, restoredItemKey, catalog.rows)
     }
@@ -217,8 +224,6 @@ private fun CatalogContent(
                 ?: restoredItemKey.takeIf { it != RailRestore.BILLBOARD_PLAY },
         )
     }
-    var previewOrigin by remember { mutableStateOf<Rect?>(null) }
-    var billboardBounds by remember { mutableStateOf<Rect?>(null) }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -260,19 +265,10 @@ private fun CatalogContent(
         animationSpec = tween(350),
         label = "backdrop-alpha",
     )
-    val coversHero = previewUi.phase == TrailerPreviewPhase.Opening ||
-        previewUi.phase == TrailerPreviewPhase.Playing
-    val infoAlpha by animateFloatAsState(
-        targetValue = if (coversHero) 0f else 1f,
-        animationSpec = tween(250),
-        label = "billboard-info-alpha",
-    )
-
     Box(modifier = Modifier.fillMaxSize().testTag("catalog")) {
         BillboardBackdrop(
             title = backdrop,
             modifier = Modifier.graphicsLayer { alpha = backdropAlpha },
-            onBoundsInWindow = { billboardBounds = it },
         )
         CompositionLocalProvider(LocalBringIntoViewSpec provides NoAutoScrollSpec) {
             LazyColumn(
@@ -296,11 +292,9 @@ private fun CatalogContent(
                             returnPlay = true
                             returnRowId = null
                             returnItemKey = RailRestore.BILLBOARD_PLAY
-                            previewOrigin = billboardBounds
                             onBillboardPlayFocused()
                             onPreviewTitle(hero)
                         },
-                        modifier = Modifier.graphicsLayer { alpha = infoAlpha },
                     )
                 }
                 itemsIndexed(catalog.rows, key = { _, row -> row.id }) { index, row ->
@@ -315,13 +309,12 @@ private fun CatalogContent(
                                 returnItemKey = focused.key
                                 if (row.drivesHero) {
                                     hero = focused
-                                    backdrop = focused
+                                    pendingBackdrop = focused
                                 }
                                 onTitleFocused(row.id, focused.key)
                                 onShelfItemFocused(row.id, itemIndex, row.items.size, row.hasMore)
                                 onPreviewTitle(focused)
                             },
-                            onItemBounds = { previewOrigin = it },
                             onItemClick = { title ->
                                 if (row.id == LibraryRows.CONTINUE_WATCHING) {
                                     continueByKey[title.key]?.let(onContinueWatching)
@@ -346,18 +339,16 @@ private fun CatalogContent(
                                     restoredItemFocus.takeIf { target.rowId == row.id }
                                 else -> null
                             },
+                            previewTitleKey = previewUi.title?.key,
+                            previewPhase = previewUi.phase,
+                            previewPlayer = previewPlayer,
+                            previewLogoUrl = previewUi.logoUrl,
+                            onPreviewOpened = onPreviewMorphFinished,
                         )
                     }
                 }
             }
         }
-        TrailerPreviewOverlay(
-            ui = previewUi,
-            player = previewPlayer,
-            originInWindow = previewOrigin,
-            destinationInWindow = billboardBounds,
-            onMorphFinished = onPreviewMorphFinished,
-        )
     }
 }
 
