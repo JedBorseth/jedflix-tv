@@ -30,6 +30,7 @@ import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.playback.PlayerAudioSelection
 import com.jedflix.tv.data.playback.PlayerLanguages
+import com.jedflix.tv.data.playback.SkipKind
 import com.jedflix.tv.data.playback.SkipSegment
 import com.jedflix.tv.data.playback.SkipWindows
 import com.jedflix.tv.data.playback.TimelineScrub
@@ -91,6 +92,7 @@ class PlayerViewModel(
     private var countdownJob: Job? = null
     private var skipJob: Job? = null
     private var skipSegments: List<SkipSegment> = emptyList()
+    private var outroPromptConsumed = false
     private var handlingEnded = false
     private var audioFallbackAttempted = false
 
@@ -306,6 +308,7 @@ class PlayerViewModel(
     private fun loadSkipSegments(item: PlaybackItem) {
         skipJob?.cancel()
         skipSegments = emptyList()
+        outroPromptConsumed = false
         _state.value = _state.value.copy(skip = null)
         if (item.mediaType != MediaType.TV || item.season == null || item.episode == null) return
         skipJob = viewModelScope.launch {
@@ -359,12 +362,27 @@ class PlayerViewModel(
             isEnded = player.playbackState == Player.STATE_ENDED,
             skip = SkipWindows.active(skipSegments, position),
         )
+        maybeOfferOutroUpNext(position)
     }
 
     private fun publishSkip() {
         val current = _state.value
         if (current.error) return
         _state.value = current.copy(skip = SkipWindows.active(skipSegments, current.positionMs))
+        maybeOfferOutroUpNext(current.positionMs)
+    }
+
+    private fun maybeOfferOutroUpNext(positionMs: Long) {
+        if (_state.value.error) return
+        val inOutro = SkipWindows.inOutro(skipSegments, positionMs)
+        if (!inOutro) {
+            if (_state.value.upNext == null) outroPromptConsumed = false
+            return
+        }
+        if (outroPromptConsumed || _state.value.upNext != null) return
+        val ref = nextRef ?: return
+        outroPromptConsumed = true
+        viewModelScope.launch { playNext(ref, countdown = true) }
     }
 
     private fun publishTracks(tracks: Tracks) {
@@ -508,6 +526,7 @@ class PlayerViewModel(
         nextTitle = title
         nextStillUrl = stillUrl
         _state.value = _state.value.copy(hasNextEpisode = true)
+        maybeOfferOutroUpNext(_state.value.positionMs)
     }
 
     private fun remainingMs(): Long {
@@ -520,14 +539,25 @@ class PlayerViewModel(
         if (_state.value.error || _state.value.upNext != null) return
         val ref = nextRef ?: return
         if (resolvedNext != null || prefetchJob?.isActive == true) return
-        if (remainingMs() > PREFETCH_REMAINING_MS) return
+        if (remainingMs() > PREFETCH_REMAINING_MS && !approachingOutro()) return
         prefetchJob = viewModelScope.launch {
             resolvedNext = resolveNext(ref)
         }
     }
 
+    private fun approachingOutro(): Boolean {
+        val position = player.currentPosition.coerceAtLeast(0L)
+        return skipSegments.any { segment ->
+            segment.kind == SkipKind.Outro &&
+                segment.endMs > segment.startMs &&
+                position >= segment.startMs - PREFETCH_REMAINING_MS &&
+                position < segment.endMs
+        }
+    }
+
     private fun onEnded() {
         if (handlingEnded || _state.value.error) return
+        if (_state.value.upNext != null) return
         handlingEnded = true
         viewModelScope.launch {
             nextLookupJob?.join()

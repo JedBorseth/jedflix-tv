@@ -42,13 +42,23 @@ class AudioFormatLabelTest {
     @Test
     fun languagePlusCodecAndChannels() {
         assertEquals(
-            "English  ·  DTS 5.1",
-            AudioFormatLabel.format("eng", "dtsc", null, 6),
+            "English  ·  DTS 5.1  ·  FFmpeg",
+            AudioFormatLabel.format("eng", "dtsc", "audio/vnd.dts", 6),
         )
         assertEquals(
             "Japanese  ·  AAC Stereo",
             AudioFormatLabel.format("jpn", "mp4a.40.2", "audio/mp4a-latm", 2),
         )
+    }
+
+    @Test
+    fun dtsHdIsMarkedAsFfmpegTranscode() {
+        assertEquals(
+            "English  ·  DTS-HD 5.1  ·  FFmpeg",
+            AudioFormatLabel.format("eng", "dtshd", "audio/vnd.dts.hd", 6),
+        )
+        assertTrue(AudioFormatLabel.isFfmpegTranscoded("dtsc", "audio/vnd.dts"))
+        assertFalse(AudioFormatLabel.isFfmpegTranscoded("mp4a.40.2", "audio/mp4a-latm"))
     }
 
     @Test

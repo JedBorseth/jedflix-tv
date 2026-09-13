@@ -27,10 +27,15 @@ class SkipWindowsTest {
     }
 
     @Test
-    fun showsOutroNearTheEnd() {
-        val skip = SkipWindows.active(listOf(outro(3_000_000, 3_100_000)), positionMs = 3_020_000)
-        assertEquals(SkipKind.Outro, skip?.kind)
-        assertEquals(3_100_000L, skip?.endMs)
+    fun outroIsNotASkipButton() {
+        assertNull(SkipWindows.active(listOf(outro(3_000_000, 3_100_000)), positionMs = 3_020_000))
+    }
+
+    @Test
+    fun inOutroWhileCreditsPlay() {
+        assertEquals(true, SkipWindows.inOutro(listOf(outro(3_000_000, 3_100_000)), 3_020_000))
+        assertEquals(false, SkipWindows.inOutro(listOf(outro(3_000_000, 3_100_000)), 2_900_000))
+        assertEquals(false, SkipWindows.inOutro(listOf(intro(10_000, 70_000)), 12_000))
     }
 
     @Test

@@ -67,4 +67,27 @@ class PlayerFocusTest {
             ),
         )
     }
+
+    @Test
+    fun upNextTakesFocusOverChromeAndSkip() {
+        assertEquals(
+            PlayerFocusRequest.UpNext,
+            playerFocusWhenChromeChanges(
+                error = false,
+                upNextOpen = true,
+                menuOpen = false,
+                controlsVisible = true,
+            ),
+        )
+        assertEquals(
+            PlayerFocusRequest.Unchanged,
+            playerFocusWhenSkipChanges(
+                error = false,
+                upNextOpen = true,
+                menuOpen = false,
+                controlsVisible = false,
+                skipVisible = true,
+            ),
+        )
+    }
 }

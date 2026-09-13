@@ -87,7 +87,13 @@ object AudioFormatLabel {
         val extras = listOfNotNull(codec, channels).joinToString(" ")
         val base = if (extras.isBlank()) language else "$language  ·  $extras"
         val extraLabel = trackLabel?.trim()?.takeIf { it.isNotEmpty() && !it.equals(language, ignoreCase = true) }
-        return if (extraLabel != null && extraLabel !in base) "$base  ·  $extraLabel" else base
+        val named = if (extraLabel != null && extraLabel !in base) "$base  ·  $extraLabel" else base
+        return if (isFfmpegTranscoded(codecs, mimeType)) "$named  ·  FFmpeg" else named
+    }
+
+    fun isFfmpegTranscoded(codecs: String?, mimeType: String?): Boolean {
+        val src = "${codecs.orEmpty()} ${mimeType.orEmpty()}".lowercase(Locale.US)
+        return "dts" in src || "dca" in src
     }
 
     fun codecLabel(codecs: String?, mimeType: String?): String? {
