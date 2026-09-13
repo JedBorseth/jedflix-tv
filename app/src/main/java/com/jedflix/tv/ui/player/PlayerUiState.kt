@@ -1,6 +1,7 @@
 package com.jedflix.tv.ui.player
 
 import com.jedflix.tv.data.playback.PlaybackItem
+import com.jedflix.tv.data.playback.SkipAction
 
 data class SelectableTrack(
     val id: String,
@@ -31,10 +32,11 @@ data class PlayerUiState(
     val selectedAudioId: String? = null,
     val selectedTextId: String? = null,
     val hasNextEpisode: Boolean = false,
+    val skip: SkipAction? = null,
     val upNext: UpNextUi? = null,
 )
 
 sealed interface PlayerEvent {
     data object SeriesComplete : PlayerEvent
-    data class OpenPicker(val season: Int, val episode: Int) : PlayerEvent
+    data class OpenPicker(val season: Int?, val episode: Int?) : PlayerEvent
 }

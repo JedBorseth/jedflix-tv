@@ -56,6 +56,12 @@ object JedflixIcons {
         )
     }
     val SkipNext: ImageVector by lazy { icon("SkipNext", "M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z") }
+    val SwapHoriz: ImageVector by lazy {
+        icon(
+            "SwapHoriz",
+            "M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z",
+        )
+    }
     val Add: ImageVector by lazy { icon("Add", "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z") }
     val Settings: ImageVector by lazy {
         icon(

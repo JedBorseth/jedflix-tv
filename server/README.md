@@ -37,8 +37,8 @@ TMDB_API_KEY=… CLIP_DIR=/tmp/tv-clips go run ./cmd/clipgen --limit 1
 
 1. `go vet` + `go test`
 2. Build and push `ghcr.io/jedborseth/jedflix-tv/api:<sha>` and `:latest`
-3. SSH to the server, `docker compose pull && docker compose up -d`, wait for the
-   container healthcheck
+3. SSH to the server, pin `TV_API_TAG` to that SHA, `docker compose pull api &&
+   docker compose up -d --no-deps api`, wait for the container healthcheck
 
 `up -d` does **not** run clipgen (compose profile `clipgen`).
 

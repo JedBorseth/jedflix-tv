@@ -105,8 +105,12 @@ jobs:
             if [ -n "${GHCR_TOKEN}" ]; then
               echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             fi
-            docker compose pull
-            docker compose up -d --remove-orphans
+            # Pull the image this workflow just pushed. A leftover TV_API_TAG in
+            # .env (e.g. clipgen-dev) would otherwise 404 on GHCR.
+            unset COMPOSE_PROFILES || true
+            export TV_API_TAG="${GIT_SHA}"
+            docker compose pull api
+            docker compose up -d --remove-orphans --no-deps api
             docker logout ghcr.io >/dev/null 2>&1 || true
             docker image prune -f >/dev/null
             echo "== Waiting for jedflix-tv-api to report healthy =="

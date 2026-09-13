@@ -23,12 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -59,7 +54,7 @@ fun PlayerScreen(
     comet: CometClient,
     onExit: () -> Unit,
     onSeriesComplete: () -> Unit,
-    onNeedPicker: (season: Int, episode: Int) -> Unit,
+    onNeedPicker: (season: Int?, episode: Int?) -> Unit,
 ) {
     val item = remember { playbackSession.current }
     if (item == null) {
@@ -87,6 +82,8 @@ fun PlayerScreen(
     var hideGeneration by remember { mutableIntStateOf(0) }
     val transportFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
+    val timelineFocus = remember { FocusRequester() }
+    val skipFocus = remember { FocusRequester() }
     val menuFocus = remember { FocusRequester() }
     val upNextFocus = remember { FocusRequester() }
 
@@ -142,15 +139,38 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(state.error, state.upNext, menu, controlsVisible) {
-        val target = when {
-            state.error -> return@LaunchedEffect
-            state.upNext != null -> upNextFocus
-            menu != PlayerMenu.None -> menuFocus
-            controlsVisible -> playFocus
-            else -> transportFocus
+        val target = when (
+            playerFocusWhenChromeChanges(
+                error = state.error,
+                upNextOpen = state.upNext != null,
+                menuOpen = menu != PlayerMenu.None,
+                controlsVisible = controlsVisible,
+            )
+        ) {
+            PlayerFocusRequest.UpNext -> upNextFocus
+            PlayerFocusRequest.Menu -> menuFocus
+            PlayerFocusRequest.Play -> playFocus
+            PlayerFocusRequest.Transport -> transportFocus
+            PlayerFocusRequest.Skip, PlayerFocusRequest.Unchanged -> return@LaunchedEffect
         }
         withFrameNanos { }
         runCatching { target.requestFocus() }
+    }
+
+    LaunchedEffect(state.error, state.upNext, menu, controlsVisible, state.skip) {
+        if (
+            playerFocusWhenSkipChanges(
+                error = state.error,
+                upNextOpen = state.upNext != null,
+                menuOpen = menu != PlayerMenu.None,
+                controlsVisible = controlsVisible,
+                skipVisible = state.skip != null,
+            ) != PlayerFocusRequest.Skip
+        ) {
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        runCatching { skipFocus.requestFocus() }
     }
 
     BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null) {
@@ -170,6 +190,7 @@ fun PlayerScreen(
                 enabled = !controlsVisible &&
                     menu == PlayerMenu.None &&
                     state.upNext == null &&
+                    state.skip == null &&
                     !state.error,
             )
             .onKeyEvent { event ->
@@ -179,8 +200,8 @@ fun PlayerScreen(
                     menuOpen = menu != PlayerMenu.None,
                     upNextOpen = state.upNext != null,
                     error = state.error,
+                    skipVisible = state.skip != null,
                     onShowChrome = { showChrome() },
-                    onHideChrome = { hideChrome() },
                     onTogglePlay = {
                         viewModel.togglePlayPause()
                         showChrome()
@@ -195,6 +216,7 @@ fun PlayerScreen(
                     },
                     onSeekBack = { seekBy(-10) },
                     onSeekForward = { seekBy(10) },
+                    onSkip = { viewModel.skipSegment() },
                     onStop = onExit,
                 )
             },
@@ -241,6 +263,7 @@ fun PlayerScreen(
                 state = state,
                 seekHintSec = seekHintSec,
                 playFocus = playFocus,
+                timelineFocus = timelineFocus,
                 onPlayPause = {
                     viewModel.togglePlayPause()
                     showChrome()
@@ -255,12 +278,27 @@ fun PlayerScreen(
                     showChrome()
                     menu = PlayerMenu.Audio
                 },
-                onNext = {
+                onSwitchStream = {
                     showChrome()
-                    viewModel.skipToNext()
+                    viewModel.switchStream()
+                },
+                onScrubBy = { deltaMs ->
+                    viewModel.scrubBy(deltaMs)
+                    showChrome()
                 },
                 onSurfaceTap = { onSurfaceTap() },
             )
+        }
+
+        if (!state.error && state.upNext == null && menu == PlayerMenu.None) {
+            state.skip?.let { skip ->
+                SkipOverlay(
+                    skip = skip,
+                    skipFocus = skipFocus,
+                    raised = controlsVisible,
+                    onSkip = { viewModel.skipSegment() },
+                )
+            }
         }
 
         if (menu != PlayerMenu.None && !state.error) {
@@ -298,70 +336,6 @@ fun PlayerScreen(
         if (state.error) {
             PlayerError(onBack = onExit)
         }
-    }
-}
-
-private fun handlePlayerKey(
-    event: KeyEvent,
-    controlsVisible: Boolean,
-    menuOpen: Boolean,
-    upNextOpen: Boolean,
-    error: Boolean,
-    onShowChrome: () -> Unit,
-    onHideChrome: () -> Unit,
-    onTogglePlay: () -> Unit,
-    onPlay: () -> Unit,
-    onPause: () -> Unit,
-    onSeekBack: () -> Unit,
-    onSeekForward: () -> Unit,
-    onStop: () -> Unit,
-): Boolean {
-    if (error || event.type != KeyEventType.KeyDown) return false
-    if (menuOpen || upNextOpen) return false
-    val media = when (event.key) {
-        Key.MediaPlay -> {
-            onPlay(); true
-        }
-        Key.MediaPause -> {
-            onPause(); true
-        }
-        Key.MediaPlayPause, Key.Spacebar -> {
-            onTogglePlay(); true
-        }
-        Key.MediaRewind -> {
-            onSeekBack(); true
-        }
-        Key.MediaFastForward -> {
-            onSeekForward(); true
-        }
-        Key.MediaStop -> {
-            onStop(); true
-        }
-        else -> false
-    }
-    if (media) return true
-    if (!controlsVisible) {
-        return when (event.key) {
-            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                onTogglePlay(); true
-            }
-            Key.DirectionLeft -> {
-                onSeekBack(); true
-            }
-            Key.DirectionRight -> {
-                onSeekForward(); true
-            }
-            Key.DirectionUp, Key.DirectionDown -> {
-                onShowChrome(); true
-            }
-            else -> false
-        }
-    }
-    return when (event.key) {
-        Key.DirectionUp, Key.DirectionDown -> {
-            onHideChrome(); true
-        }
-        else -> false
     }
 }
 

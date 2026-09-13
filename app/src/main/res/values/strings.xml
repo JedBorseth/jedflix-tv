@@ -129,7 +129,11 @@
     <string name="player_pause">Pause</string>
     <string name="player_captions">Captions</string>
     <string name="player_audio">Audio</string>
-    <string name="player_next_episode">Next</string>
+    <string name="player_switch_stream">Switch stream</string>
+    <string name="player_timeline">Timeline</string>
+    <string name="player_skip_intro">Skip intro</string>
+    <string name="player_skip_recap">Skip recap</string>
+    <string name="player_skip_outro">Skip outro</string>
     <string name="player_captions_off">Off</string>
     <string name="player_no_captions">No captions in this file</string>
     <string name="player_no_audio">No alternate audio tracks</string>

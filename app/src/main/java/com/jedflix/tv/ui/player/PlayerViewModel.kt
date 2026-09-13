@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.jedflix.tv.data.comet.CometClient
+import com.jedflix.tv.data.introdb.IntroDbClient
 import com.jedflix.tv.data.library.PlaybackProgress
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.AudioFormatLabel
@@ -29,6 +30,9 @@ import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.playback.PlayerAudioSelection
 import com.jedflix.tv.data.playback.PlayerLanguages
+import com.jedflix.tv.data.playback.SkipSegment
+import com.jedflix.tv.data.playback.SkipWindows
+import com.jedflix.tv.data.playback.TimelineScrub
 import com.jedflix.tv.data.playback.TextTrackLabel
 import com.jedflix.tv.data.settings.PlaybackPrefs
 import com.jedflix.tv.data.settings.SettingsStore
@@ -59,6 +63,7 @@ class PlayerViewModel(
     private val tmdb: TmdbRepository,
     private val comet: CometClient,
     private val playbackSession: PlaybackSession,
+    private val introDb: IntroDbClient,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PlayerUiState(item))
@@ -84,6 +89,8 @@ class PlayerViewModel(
     private var nextLookupJob: Job? = null
     private var prefetchJob: Job? = null
     private var countdownJob: Job? = null
+    private var skipJob: Job? = null
+    private var skipSegments: List<SkipSegment> = emptyList()
     private var handlingEnded = false
     private var audioFallbackAttempted = false
 
@@ -91,7 +98,7 @@ class PlayerViewModel(
         override fun onPlayerError(error: PlaybackException) {
             countdownJob?.cancel()
             prefetchJob?.cancel()
-            _state.value = _state.value.copy(error = true, upNext = null, isPlaying = false)
+            _state.value = _state.value.copy(error = true, upNext = null, skip = null, isPlaying = false)
             persistJob?.cancel()
         }
 
@@ -172,6 +179,17 @@ class PlayerViewModel(
         publishTimeline()
     }
 
+    fun seekTo(positionMs: Long) {
+        val duration = player.duration.takeIf { it > 0L } ?: return
+        player.seekTo(positionMs.coerceIn(0L, duration))
+        publishTimeline()
+    }
+
+    fun scrubBy(deltaMs: Long) {
+        val duration = player.duration.takeIf { it > 0L } ?: return
+        seekTo(TimelineScrub.step(player.currentPosition, duration, deltaMs))
+    }
+
     fun selectAudio(trackId: String) {
         val track = _state.value.audioTracks.firstOrNull { it.id == trackId } ?: return
         val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
@@ -213,6 +231,19 @@ class PlayerViewModel(
         viewModelScope.launch { playNext(ref, countdown = false) }
     }
 
+    fun switchStream() {
+        persistProgress()
+        val item = _state.value.item
+        _events.tryEmit(PlayerEvent.OpenPicker(item.season, item.episode))
+    }
+
+    fun skipSegment() {
+        val skip = _state.value.skip ?: return
+        val duration = player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+        player.seekTo(skip.endMs.coerceIn(0L, duration))
+        publishTimeline()
+    }
+
     fun playUpNextNow() {
         val ref = nextRef ?: return
         countdownJob?.cancel()
@@ -240,6 +271,7 @@ class PlayerViewModel(
         countdownJob?.cancel()
         prefetchJob?.cancel()
         nextLookupJob?.cancel()
+        skipJob?.cancel()
         val snapshot = captureProgress()
         player.removeListener(listener)
         player.release()
@@ -268,6 +300,23 @@ class PlayerViewModel(
         )
         player.playWhenReady = play
         player.prepare()
+        loadSkipSegments(item)
+    }
+
+    private fun loadSkipSegments(item: PlaybackItem) {
+        skipJob?.cancel()
+        skipSegments = emptyList()
+        _state.value = _state.value.copy(skip = null)
+        if (item.mediaType != MediaType.TV || item.season == null || item.episode == null) return
+        skipJob = viewModelScope.launch {
+            val imdbId = item.imdbId
+                ?: runCatching { tmdb.loadDetails(item.mediaType, item.tmdbId).imdbId }.getOrNull()
+                ?: return@launch
+            skipSegments = runCatching {
+                introDb.segments(imdbId, item.season, item.episode)
+            }.getOrDefault(emptyList())
+            publishSkip()
+        }
     }
 
     private fun applyPrefs(prefs: PlaybackPrefs) {
@@ -308,7 +357,14 @@ class PlayerViewModel(
             durationMs = duration,
             isPlaying = player.isPlaying,
             isEnded = player.playbackState == Player.STATE_ENDED,
+            skip = SkipWindows.active(skipSegments, position),
         )
+    }
+
+    private fun publishSkip() {
+        val current = _state.value
+        if (current.error) return
+        _state.value = current.copy(skip = SkipWindows.active(skipSegments, current.positionMs))
     }
 
     private fun publishTracks(tracks: Tracks) {
@@ -606,10 +662,11 @@ class PlayerViewModel(
         private val tmdb: TmdbRepository,
         private val comet: CometClient,
         private val playbackSession: PlaybackSession,
+        private val introDb: IntroDbClient = IntroDbClient(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-            PlayerViewModel(context, item, library, settingsStore, tmdb, comet, playbackSession) as T
+            PlayerViewModel(context, item, library, settingsStore, tmdb, comet, playbackSession, introDb) as T
     }
 
     private companion object {

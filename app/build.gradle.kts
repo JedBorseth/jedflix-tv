@@ -36,8 +36,8 @@ android {
         applicationId = "com.jedflix.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.6.1"
+        versionCode = 16
+        versionName = "0.6.2"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
         buildConfigField("String", "TRAILER_CLIP_BASE_URL", "\"$trailerClipBaseUrl\"")
@@ -76,6 +76,26 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    packaging {
+        jniLibs {
+            pickFirsts += "**/libc++_shared.so"
+        }
+    }
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force("androidx.media3:media3-exoplayer:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-ui:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-common:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-decoder:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-exoplayer-dash:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-extractor:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-container:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-database:${libs.versions.media3.get()}")
+        force("androidx.media3:media3-datasource:${libs.versions.media3.get()}")
+    }
 }
 
 dependencies {
@@ -107,6 +127,7 @@ dependencies {
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.nextlib.media3ext)
 
     implementation(libs.zxing.core)
 

@@ -1,6 +1,7 @@
 # Runs on the Linux box next to the JedFlix stack. Copy this file to
-# ~/jedflix-tv-api/docker-compose.yml once; CI then does
-# `docker compose pull && docker compose up -d` there on every main push.
+# ~/jedflix-tv-api/docker-compose.yml once; CI then pulls the SHA it just
+# pushed (`TV_API_TAG=<git sha> docker compose pull api && up -d --no-deps api`)
+# on every main push that touches server/.
 #
 # No host port is published. Caddy (in the jedflix compose project) reaches
 # this container as jedflix-tv-api:8080 over the shared jedflix_default network
