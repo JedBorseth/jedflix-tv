@@ -18,15 +18,22 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.jedflix.tv.data.comet.CometClient
+import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.introdb.IntroDbClient
 import com.jedflix.tv.data.library.PlaybackProgress
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.live.LiveChannels
+import com.jedflix.tv.data.live.LiveEpgCell
+import com.jedflix.tv.data.live.LiveProgram
+import com.jedflix.tv.data.live.LiveSchedule
+import com.jedflix.tv.data.live.LiveUnplayable
 import com.jedflix.tv.data.playback.AudioFormatLabel
 import com.jedflix.tv.data.playback.AudioTrackOption
 import com.jedflix.tv.data.playback.AutoStream
 import com.jedflix.tv.data.playback.EpisodeRef
 import com.jedflix.tv.data.playback.NextEpisode
 import com.jedflix.tv.data.playback.PlaybackItem
+import com.jedflix.tv.data.playback.PlaybackResolver
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.playback.PlayerAudioSelection
 import com.jedflix.tv.data.playback.PlayerLanguages
@@ -54,6 +61,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 /** Owns the ExoPlayer so it survives recomposition and is released exactly once. */
 class PlayerViewModel(
@@ -64,6 +72,7 @@ class PlayerViewModel(
     private val tmdb: TmdbRepository,
     private val comet: CometClient,
     private val playbackSession: PlaybackSession,
+    private val playbackResolver: PlaybackResolver,
     private val introDb: IntroDbClient,
 ) : ViewModel() {
 
@@ -97,6 +106,10 @@ class PlayerViewModel(
     private var audioFallbackAttempted = false
     private var fallbackJob: Job? = null
     private var awaitingFallback = false
+    private var liveTuneJob: Job? = null
+    private var pendingLiveChannelId: String? = null
+    private var pendingLiveProgram: LiveProgram? = null
+    private var pendingLiveCellStartMs: Long = 0L
 
     private val listener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -282,7 +295,7 @@ class PlayerViewModel(
         val snapshot = captureProgress()
         player.removeListener(listener)
         player.release()
-        if (snapshot != null) {
+        if (snapshot != null && !_state.value.item.isLive) {
             runBlocking {
                 withContext(Dispatchers.IO) { library.recordPlayback(snapshot) }
             }
@@ -357,6 +370,7 @@ class PlayerViewModel(
         skipSegments = emptyList()
         outroPromptConsumed = false
         _state.value = _state.value.copy(skip = null)
+        if (item.isLive) return
         if (item.mediaType != MediaType.TV || item.season == null || item.episode == null) return
         skipJob = viewModelScope.launch {
             val imdbId = item.imdbId
@@ -420,7 +434,7 @@ class PlayerViewModel(
     }
 
     private fun maybeOfferOutroUpNext(positionMs: Long) {
-        if (_state.value.error) return
+        if (_state.value.error || _state.value.item.isLive) return
         val inOutro = SkipWindows.inOutro(skipSegments, positionMs)
         if (!inOutro) {
             if (_state.value.upNext == null) outroPromptConsumed = false
@@ -504,7 +518,7 @@ class PlayerViewModel(
     }
 
     private fun persistProgress() {
-        if (_state.value.error) return
+        if (_state.value.error || _state.value.item.isLive) return
         val snapshot = captureProgress() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             library.recordPlayback(snapshot)
@@ -538,6 +552,11 @@ class PlayerViewModel(
 
     private suspend fun refreshNextEpisode() {
         val item = _state.value.item
+        if (item.isLive) {
+            nextRef = null
+            _state.value = _state.value.copy(hasNextEpisode = false)
+            return
+        }
         if (item.mediaType != MediaType.TV || item.season == null || item.episode == null) {
             nextRef = null
             _state.value = _state.value.copy(hasNextEpisode = false)
@@ -584,6 +603,14 @@ class PlayerViewModel(
 
     private fun maybePrefetch() {
         if (_state.value.error || _state.value.upNext != null) return
+        if (_state.value.item.isLive) {
+            if (resolvedNext != null || prefetchJob?.isActive == true) return
+            if (remainingMs() > PREFETCH_REMAINING_MS) return
+            prefetchJob = viewModelScope.launch {
+                resolvedNext = resolveLiveNext()
+            }
+            return
+        }
         val ref = nextRef ?: return
         if (resolvedNext != null || prefetchJob?.isActive == true) return
         if (remainingMs() > PREFETCH_REMAINING_MS && !approachingOutro()) return
@@ -607,6 +634,10 @@ class PlayerViewModel(
         if (_state.value.upNext != null) return
         handlingEnded = true
         viewModelScope.launch {
+            if (_state.value.item.isLive) {
+                playLiveNext()
+                return@launch
+            }
             nextLookupJob?.join()
             val item = _state.value.item
             val ref = nextRef
@@ -733,6 +764,112 @@ class PlayerViewModel(
         return null
     }
 
+    fun retuneLive(cell: LiveEpgCell) {
+        val current = _state.value.item
+        if (!current.isLive) return
+        if (
+            current.liveChannelId == cell.channelId &&
+            current.tmdbId == cell.program.tmdbId &&
+            current.season == cell.program.season &&
+            current.episode == cell.program.episode
+        ) {
+            return
+        }
+        if (_state.value.liveRetuning) return
+        pendingLiveChannelId = cell.channelId
+        pendingLiveProgram = cell.program
+        pendingLiveCellStartMs = cell.startEpochMs
+        liveTuneJob?.cancel()
+        liveTuneJob = viewModelScope.launch {
+            _state.value = _state.value.copy(liveRetuning = true, liveRetuneError = null)
+            try {
+                val offset = LiveSchedule.joinOffsetMs(
+                    cell.program,
+                    cell.startEpochMs,
+                    System.currentTimeMillis(),
+                )
+                playbackResolver.autoStartLiveProgram(cell.channelId, cell.program, offset)
+                val next = playbackSession.current ?: return@launch
+                settingsStore.setLastLiveChannelId(cell.channelId)
+                commitNext(next)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: StreamException) {
+                _state.value = _state.value.copy(liveRetuneError = e)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(liveRetuneError = StreamException.Network(e))
+            } finally {
+                _state.value = _state.value.copy(liveRetuning = false)
+            }
+        }
+    }
+
+    fun removeFailedLiveFromGuide() {
+        pendingLiveProgram?.let(LiveUnplayable::mark)
+            ?: pendingLiveChannelId?.let(LiveUnplayable::markCurrentNow)
+            ?: _state.value.item.asLiveProgram()?.let(LiveUnplayable::mark)
+        dismissLiveRetuneError()
+    }
+
+    fun cancelLiveRetune() {
+        liveTuneJob?.cancel()
+        _state.value = _state.value.copy(liveRetuning = false)
+    }
+
+    fun dismissLiveRetuneError() {
+        _state.value = _state.value.copy(liveRetuneError = null)
+        pendingLiveChannelId = null
+        pendingLiveProgram = null
+        pendingLiveCellStartMs = 0L
+    }
+
+    fun retryLiveRetune() {
+        val channelId = pendingLiveChannelId ?: return
+        val program = pendingLiveProgram ?: return
+        val cellStart = pendingLiveCellStartMs
+        _state.value = _state.value.copy(liveRetuneError = null)
+        retuneLive(
+            LiveEpgCell(
+                channelId = channelId,
+                program = program,
+                startEpochMs = cellStart,
+                endEpochMs = cellStart + LiveSchedule.snappedDurationMs(program.durationMs),
+            ),
+        )
+    }
+
+    private suspend fun playLiveNext() {
+        val existing = resolvedNext
+        if (existing != null) {
+            commitNext(existing)
+            return
+        }
+        val next = resolveLiveNext()
+        if (next != null) {
+            commitNext(next)
+            return
+        }
+        handlingEnded = false
+        _state.value = _state.value.copy(error = true, isPlaying = false)
+    }
+
+    private suspend fun resolveLiveNext(): PlaybackItem? {
+        val current = _state.value.item
+        val channelId = current.liveChannelId ?: return null
+        val program = current.asLiveProgram() ?: return null
+        return runCatching {
+            playbackResolver.autoStartLiveNext(channelId, program)
+            playbackSession.current
+        }.getOrNull()
+    }
+
+    private fun PlaybackItem.asLiveProgram(): LiveProgram? {
+        val channel = liveChannelId?.let(LiveChannels::byId) ?: return null
+        return channel.lineup.firstOrNull {
+            it.tmdbId == tmdbId && it.mediaType == mediaType && it.season == season && it.episode == episode
+        }
+    }
+
     class Factory(
         private val context: Context,
         private val item: PlaybackItem,
@@ -741,11 +878,22 @@ class PlayerViewModel(
         private val tmdb: TmdbRepository,
         private val comet: CometClient,
         private val playbackSession: PlaybackSession,
+        private val playbackResolver: PlaybackResolver,
         private val introDb: IntroDbClient = IntroDbClient(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-            PlayerViewModel(context, item, library, settingsStore, tmdb, comet, playbackSession, introDb) as T
+            PlayerViewModel(
+                context,
+                item,
+                library,
+                settingsStore,
+                tmdb,
+                comet,
+                playbackSession,
+                playbackResolver,
+                introDb,
+            ) as T
     }
 
     private companion object {

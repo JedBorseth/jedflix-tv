@@ -77,6 +77,20 @@ class PlayerKeysTest {
     }
 
     @Test
+    fun overlayConsumesKeysSoChromeCannotOpen() {
+        var shown = false
+        assertTrue(
+            dispatch(
+                key = Key.DirectionDown,
+                controlsVisible = false,
+                overlayOpen = true,
+                onShowChrome = { shown = true },
+            ),
+        )
+        assertFalse(shown)
+    }
+
+    @Test
     fun upAndDownDoNotStealFocusWhileChromeIsOpen() {
         assertFalse(dispatch(key = Key.DirectionDown, controlsVisible = true))
         assertFalse(dispatch(key = Key.DirectionUp, controlsVisible = true))
@@ -96,6 +110,7 @@ class PlayerKeysTest {
         controlsVisible: Boolean,
         menuOpen: Boolean = false,
         skipVisible: Boolean = false,
+        overlayOpen: Boolean = false,
         onShowChrome: () -> Unit = {},
         onTogglePlay: () -> Unit = {},
         onPlay: () -> Unit = {},
@@ -112,6 +127,7 @@ class PlayerKeysTest {
         upNextOpen = false,
         error = false,
         skipVisible = skipVisible,
+        overlayOpen = overlayOpen,
         onShowChrome = onShowChrome,
         onTogglePlay = onTogglePlay,
         onPlay = onPlay,

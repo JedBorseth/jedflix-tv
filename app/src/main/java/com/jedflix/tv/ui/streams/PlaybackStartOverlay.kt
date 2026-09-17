@@ -1,9 +1,13 @@
 package com.jedflix.tv.ui.streams
 
+import android.graphics.drawable.ColorDrawable
+import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,16 +19,29 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Icon
@@ -43,15 +60,11 @@ import com.jedflix.tv.ui.theme.Zinc950
 @Composable
 fun PlaybackStartingOverlay(onCancel: () -> Unit) {
     val cancelFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Zinc950.copy(alpha = 0.82f))
-            .focusable()
-            .testTag("playback-starting"),
-        contentAlignment = Alignment.Center,
-    ) {
+    BlockingScrim(onDismiss = onCancel, testTag = "playback-starting", contentAlignment = Alignment.Center) {
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            runCatching { cancelFocus.requestFocus() }
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             val brush = rememberShimmerBrush()
             SkeletonBlock(brush, width = 260.dp, height = 6.dp, radius = 3.dp)
@@ -65,12 +78,7 @@ fun PlaybackStartingOverlay(onCancel: () -> Unit) {
             Button(
                 onClick = onCancel,
                 modifier = Modifier.focusRequester(cancelFocus),
-                colors = ButtonDefaults.colors(
-                    containerColor = Color.White.copy(alpha = 0.22f),
-                    contentColor = WarmWhite,
-                    focusedContainerColor = WarmWhite,
-                    focusedContentColor = Zinc950,
-                ),
+                colors = secondaryButtonColors(),
             ) {
                 Text(text = stringResource(R.string.action_cancel), fontWeight = FontWeight.SemiBold)
             }
@@ -85,22 +93,23 @@ fun PlaybackStartErrorOverlay(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
+    onRemoveFromGuide: (() -> Unit)? = null,
 ) {
     val primaryFocus = remember { FocusRequester() }
-    LaunchedEffect(kind) { runCatching { primaryFocus.requestFocus() } }
-    val (titleRes, bodyRes) = when (kind) {
-        StreamErrorKind.MISSING_KEY -> R.string.streams_error_missing_key_title to R.string.streams_error_missing_key
-        StreamErrorKind.NO_IMDB -> R.string.streams_error_no_imdb_title to R.string.streams_error_no_imdb
-        StreamErrorKind.NO_STREAMS -> R.string.streams_error_empty_title to R.string.streams_error_empty
-        StreamErrorKind.DEBRID -> R.string.streams_error_debrid_title to R.string.streams_error_debrid
-        StreamErrorKind.NETWORK -> R.string.streams_error_network_title to R.string.error_network
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Zinc950.copy(alpha = 0.92f))
-            .testTag("playback-start-error"),
-    ) {
+    val removeFromGuide = onRemoveFromGuide
+    val liveNoStreams = removeFromGuide != null && kind == StreamErrorKind.NO_STREAMS
+    BlockingScrim(onDismiss = onDismiss, testTag = "playback-start-error") {
+        LaunchedEffect(kind, liveNoStreams) {
+            withFrameNanos { }
+            runCatching { primaryFocus.requestFocus() }
+        }
+        val (titleRes, bodyRes) = when (kind) {
+            StreamErrorKind.MISSING_KEY -> R.string.streams_error_missing_key_title to R.string.streams_error_missing_key
+            StreamErrorKind.NO_IMDB -> R.string.streams_error_no_imdb_title to R.string.streams_error_no_imdb
+            StreamErrorKind.NO_STREAMS -> R.string.streams_error_empty_title to R.string.streams_error_empty
+            StreamErrorKind.DEBRID -> R.string.streams_error_debrid_title to R.string.streams_error_debrid
+            StreamErrorKind.NETWORK -> R.string.streams_error_network_title to R.string.error_network
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -128,8 +137,22 @@ fun PlaybackStartErrorOverlay(
             }
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                when (kind) {
-                    StreamErrorKind.MISSING_KEY -> {
+                when {
+                    removeFromGuide != null && kind == StreamErrorKind.NO_STREAMS -> {
+                        Button(
+                            onClick = removeFromGuide,
+                            modifier = Modifier.focusRequester(primaryFocus).testTag("live-remove-from-guide"),
+                            colors = filledButtonColors(),
+                        ) {
+                            Icon(JedflixIcons.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.live_remove_from_guide), fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(onClick = onDismiss, colors = secondaryButtonColors()) {
+                            Text(stringResource(R.string.action_back), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    kind == StreamErrorKind.MISSING_KEY -> {
                         Button(
                             onClick = onOpenSettings,
                             modifier = Modifier.focusRequester(primaryFocus).testTag("streams-open-settings"),
@@ -143,7 +166,7 @@ fun PlaybackStartErrorOverlay(
                             Text(stringResource(R.string.action_back), fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    StreamErrorKind.NO_IMDB -> {
+                    kind == StreamErrorKind.NO_IMDB -> {
                         Button(
                             onClick = onDismiss,
                             modifier = Modifier.focusRequester(primaryFocus),
@@ -169,6 +192,57 @@ fun PlaybackStartErrorOverlay(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BlockingScrim(
+    onDismiss: () -> Unit,
+    testTag: String,
+    contentAlignment: Alignment = Alignment.TopStart,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.apply {
+                setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                setDimAmount(0f)
+                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            }
+            dialogView.isFocusable = true
+            dialogView.isFocusableInTouchMode = true
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Zinc950.copy(alpha = 0.92f))
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
+                    }
+                }
+                .onKeyEvent { event ->
+                    if (event.key == Key.Back || event.key == Key.Escape) return@onKeyEvent false
+                    event.type == KeyEventType.KeyDown || event.type == KeyEventType.KeyUp
+                }
+                .focusGroup()
+                .focusProperties {
+                    onExit = { cancelFocusChange() }
+                }
+                .testTag(testTag),
+            contentAlignment = contentAlignment,
+            content = content,
+        )
     }
 }
 

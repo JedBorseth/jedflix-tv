@@ -5,8 +5,24 @@ Android TV app for browsing and playing Movies and Shows.
 ## Language
 
 **CatalogSection**:
-One of the three left-nav destinations: Home, Movies, or Shows.
+One of the three catalog left-nav destinations: Home, Movies, or Shows. Live TV is a left-nav destination but not a CatalogSection.
 _Avoid_: Category, tab, page
+
+**Live TV**:
+A left-nav destination that immediately tunes the last channel (Marvel on first use). Channels are looping queues of Titles. Tuning joins the current EPG program mid-title; after that the channel only advances when the current file ends. The TV guide is an in-player overlay.
+_Avoid_: IPTV, linear TV (unless describing the EPG look), browse landing
+
+**Channel**:
+A named Live TV queue with a looping lineup (Marvel, 90s/2000s Cartoons, Comedy Central, Sitcom, Harry Potter, A&E, Sex and the City, Impractical Jokers, Discovery, HGTV, Food Network, Star Wars, Seinfeld, Disney XD, Brooklyn Nine-Nine, The Office 24/7, The Simpsons, Cartoon Network).
+_Avoid_: station, network (unless it is the channel's name)
+
+**Program**:
+One Title (or episode) in a Channel lineup. The EPG shows it in 30-minute columns.
+_Avoid_: slot (unless describing the 30-minute grid), broadcast item
+
+**Guide**:
+The in-player TV-guide overlay (channel rows × 30-minute columns) opened from a control next to Pause. It is the only way to change Channel.
+_Avoid_: EPG screen, schedule page, channel picker landing
 
 **Shelf**:
 A named horizontal rail of Titles on a CatalogSection.

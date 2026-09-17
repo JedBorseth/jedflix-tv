@@ -38,10 +38,14 @@ import androidx.media3.ui.SubtitleView
 import com.jedflix.tv.R
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.playback.PlaybackResolver
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaType
 import com.jedflix.tv.data.tmdb.TmdbRepository
+import com.jedflix.tv.ui.streams.PlaybackStartErrorOverlay
+import com.jedflix.tv.ui.streams.PlaybackStartingOverlay
+import com.jedflix.tv.ui.streams.toKind
 import kotlinx.coroutines.delay
 
 private enum class PlayerMenu { None, Audio, Captions }
@@ -53,6 +57,7 @@ fun PlayerScreen(
     settingsStore: SettingsStore,
     tmdb: TmdbRepository,
     comet: CometClient,
+    playbackResolver: PlaybackResolver,
     onExit: () -> Unit,
     onSeriesComplete: () -> Unit,
     onNeedPicker: (season: Int?, episode: Int?) -> Unit,
@@ -74,12 +79,14 @@ fun PlayerScreen(
             tmdb,
             comet,
             playbackSession,
+            playbackResolver,
         ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
     var controlsVisible by remember { mutableStateOf(true) }
     var menu by remember { mutableStateOf(PlayerMenu.None) }
     var letterboxdOpen by remember { mutableStateOf(false) }
+    var guideOpen by remember { mutableStateOf(false) }
     var seekHintSec by remember { mutableStateOf<Int?>(null) }
     var hideGeneration by remember { mutableIntStateOf(0) }
     val transportFocus = remember { FocusRequester() }
@@ -103,25 +110,37 @@ fun PlayerScreen(
         }
     }
 
+    val live = state.item.isLive
+    val liveOverlay = state.liveRetuneError != null || state.liveRetuning
+
     fun showChrome() {
         controlsVisible = true
         hideGeneration += 1
     }
 
     fun hideChrome() {
-        if (menu != PlayerMenu.None || state.upNext != null || letterboxdOpen) return
+        if (menu != PlayerMenu.None || state.upNext != null || letterboxdOpen || guideOpen) return
         controlsVisible = false
         menu = PlayerMenu.None
     }
 
     fun seekBy(seconds: Int) {
+        if (live) return
         if (seconds >= 0) viewModel.seekForward() else viewModel.seekBack()
         seekHintSec = seconds
         showChrome()
     }
 
-    LaunchedEffect(controlsVisible, state.isPlaying, state.isEnded, menu, state.upNext, hideGeneration, state.error, letterboxdOpen) {
-        if (state.error || state.upNext != null || menu != PlayerMenu.None || letterboxdOpen) return@LaunchedEffect
+    LaunchedEffect(liveOverlay) {
+        if (!liveOverlay) return@LaunchedEffect
+        controlsVisible = false
+        menu = PlayerMenu.None
+        guideOpen = false
+        letterboxdOpen = false
+    }
+
+    LaunchedEffect(controlsVisible, state.isPlaying, state.isEnded, menu, state.upNext, hideGeneration, state.error, letterboxdOpen, guideOpen, liveOverlay) {
+        if (state.error || state.upNext != null || menu != PlayerMenu.None || letterboxdOpen || guideOpen || liveOverlay) return@LaunchedEffect
         if (!controlsVisible) return@LaunchedEffect
         if (!state.isPlaying || state.isEnded) return@LaunchedEffect
         delay(CONTROLLER_TIMEOUT_MS)
@@ -135,15 +154,15 @@ fun PlayerScreen(
     }
 
     val onSurfaceTap by rememberUpdatedState {
-        if (menu != PlayerMenu.None || state.upNext != null || state.error) return@rememberUpdatedState
+        if (menu != PlayerMenu.None || state.upNext != null || state.error || guideOpen || liveOverlay) return@rememberUpdatedState
         viewModel.togglePlayPause()
         showChrome()
     }
 
-    LaunchedEffect(state.error, state.upNext, menu, controlsVisible) {
+    LaunchedEffect(state.error, state.upNext, menu, controlsVisible, liveOverlay) {
         val target = when (
             playerFocusWhenChromeChanges(
-                error = state.error,
+                error = state.error || liveOverlay,
                 upNextOpen = state.upNext != null,
                 menuOpen = menu != PlayerMenu.None,
                 controlsVisible = controlsVisible,
@@ -159,10 +178,10 @@ fun PlayerScreen(
         runCatching { target.requestFocus() }
     }
 
-    LaunchedEffect(state.error, state.upNext, menu, controlsVisible, state.skip) {
+    LaunchedEffect(state.error, state.upNext, menu, controlsVisible, state.skip, liveOverlay) {
         if (
             playerFocusWhenSkipChanges(
-                error = state.error,
+                error = state.error || liveOverlay,
                 upNextOpen = state.upNext != null,
                 menuOpen = menu != PlayerMenu.None,
                 controlsVisible = controlsVisible,
@@ -181,8 +200,14 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null || letterboxdOpen) {
+    BackHandler(enabled = menu != PlayerMenu.None || state.upNext != null || letterboxdOpen || guideOpen || liveOverlay) {
         when {
+            state.liveRetuneError != null -> viewModel.dismissLiveRetuneError()
+            state.liveRetuning -> viewModel.cancelLiveRetune()
+            guideOpen -> {
+                guideOpen = false
+                showChrome()
+            }
             letterboxdOpen -> letterboxdOpen = false
             menu != PlayerMenu.None -> menu = PlayerMenu.None
             else -> viewModel.dismissUpNext()
@@ -200,7 +225,9 @@ fun PlayerScreen(
                     menu == PlayerMenu.None &&
                     state.upNext == null &&
                     state.skip == null &&
-                    !state.error,
+                    !state.error &&
+                    !guideOpen &&
+                    !liveOverlay,
             )
             .onKeyEvent { event ->
                 handlePlayerKey(
@@ -210,6 +237,9 @@ fun PlayerScreen(
                     upNextOpen = state.upNext != null,
                     error = state.error,
                     skipVisible = state.skip != null,
+                    live = live,
+                    guideOpen = guideOpen,
+                    overlayOpen = liveOverlay,
                     onShowChrome = { showChrome() },
                     onTogglePlay = {
                         viewModel.togglePlayPause()
@@ -264,7 +294,7 @@ fun PlayerScreen(
         )
 
         AnimatedVisibility(
-            visible = controlsVisible && !state.error && state.upNext == null,
+            visible = controlsVisible && !state.error && state.upNext == null && !guideOpen && !liveOverlay,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
@@ -274,12 +304,17 @@ fun PlayerScreen(
                 playFocus = playFocus,
                 timelineFocus = timelineFocus,
                 letterboxdOpen = letterboxdOpen,
+                live = live,
                 onPlayPause = {
                     viewModel.togglePlayPause()
                     showChrome()
                 },
                 onSeekBack = { seekBy(-10) },
                 onSeekForward = { seekBy(10) },
+                onGuide = {
+                    guideOpen = true
+                    controlsVisible = false
+                },
                 onCaptions = {
                     letterboxdOpen = false
                     showChrome()
@@ -307,7 +342,7 @@ fun PlayerScreen(
             )
         }
 
-        if (!state.error && state.upNext == null && menu == PlayerMenu.None) {
+        if (!state.error && state.upNext == null && menu == PlayerMenu.None && !liveOverlay) {
             state.skip?.let { skip ->
                 SkipOverlay(
                     skip = skip,
@@ -318,7 +353,7 @@ fun PlayerScreen(
             }
         }
 
-        if (menu != PlayerMenu.None && !state.error) {
+        if (menu != PlayerMenu.None && !state.error && !liveOverlay) {
             TrackMenu(
                 title = stringResource(
                     if (menu == PlayerMenu.Audio) R.string.player_audio else R.string.player_captions,
@@ -339,6 +374,35 @@ fun PlayerScreen(
                     menu = PlayerMenu.None
                     showChrome()
                 },
+            )
+        }
+
+        if (guideOpen && !state.error && !liveOverlay) {
+            LiveGuideOverlay(
+                playing = state.item,
+                tmdb = tmdb,
+                onSelectNow = { cell ->
+                    guideOpen = false
+                    viewModel.retuneLive(cell)
+                },
+                onClose = {
+                    guideOpen = false
+                    showChrome()
+                },
+            )
+        }
+
+        if (state.liveRetuning) {
+            PlaybackStartingOverlay(onCancel = viewModel::cancelLiveRetune)
+        }
+        state.liveRetuneError?.let { error ->
+            PlaybackStartErrorOverlay(
+                kind = error.toKind(),
+                detail = error.message,
+                onRetry = viewModel::retryLiveRetune,
+                onOpenSettings = onExit,
+                onDismiss = viewModel::dismissLiveRetuneError,
+                onRemoveFromGuide = viewModel::removeFailedLiveFromGuide,
             )
         }
 

@@ -6,6 +6,7 @@
     <string name="nav_home">Home</string>
     <string name="nav_movies">Movies</string>
     <string name="nav_shows">Shows</string>
+    <string name="nav_live">Live TV</string>
     <string name="nav_search">Search</string>
     <string name="nav_settings">Settings</string>
 
@@ -128,6 +129,9 @@
     <string name="player_seek_back">-%1$ds</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
+    <string name="player_guide">Guide</string>
+    <string name="live_guide_title">Live TV guide</string>
+    <string name="live_remove_from_guide">Remove from guide</string>
     <string name="player_captions">Captions</string>
     <string name="player_audio">Audio</string>
     <string name="player_switch_stream">Switch stream</string>
@@ -135,6 +139,7 @@
     <string name="player_letterboxd_qr_cd">QR code to log this title on Letterboxd</string>
     <string name="player_more">More</string>
     <string name="player_timeline">Timeline</string>
+    <string name="player_live">LIVE</string>
     <string name="player_skip_intro">Skip intro</string>
     <string name="player_skip_recap">Skip recap</string>
     <string name="player_skip_outro">Skip outro</string>

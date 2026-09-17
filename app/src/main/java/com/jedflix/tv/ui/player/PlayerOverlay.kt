@@ -95,9 +95,11 @@ internal fun PlayerChrome(
     playFocus: FocusRequester,
     timelineFocus: FocusRequester,
     letterboxdOpen: Boolean,
+    live: Boolean,
     onPlayPause: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
+    onGuide: () -> Unit,
     onCaptions: () -> Unit,
     onAudio: () -> Unit,
     onSwitchStream: () -> Unit,
@@ -110,7 +112,7 @@ internal fun PlayerChrome(
     val fraction = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
     val remaining = (duration - position).coerceAtLeast(0L)
     var timelineFocused by remember { mutableStateOf(false) }
-    val toTimeline = Modifier.focusProperties { down = timelineFocus }
+    val toTimeline = if (live) Modifier else Modifier.focusProperties { down = timelineFocus }
 
     Box(
         modifier = Modifier
@@ -122,7 +124,7 @@ internal fun PlayerChrome(
         TitleBar(
             title = state.item.title,
             subtitle = state.item.subtitle,
-            showLetterboxd = state.item.mediaType == MediaType.MOVIE,
+            showLetterboxd = !live && state.item.mediaType == MediaType.MOVIE,
             playFocus = playFocus,
             letterboxdOpen = letterboxdOpen,
             onToggleLetterboxd = onToggleLetterboxd,
@@ -150,20 +152,29 @@ internal fun PlayerChrome(
                     modifier = Modifier.focusRequester(playFocus).then(toTimeline).testTag("player-play"),
                     emphasized = true,
                 )
-                ControlButton(
-                    onClick = onSeekBack,
-                    icon = JedflixIcons.Replay10,
-                    label = stringResource(R.string.player_rewind),
-                    modifier = Modifier.then(toTimeline).testTag("player-rewind"),
-                    showLabel = false,
-                )
-                ControlButton(
-                    onClick = onSeekForward,
-                    icon = JedflixIcons.Forward10,
-                    label = stringResource(R.string.player_forward),
-                    modifier = Modifier.then(toTimeline).testTag("player-forward"),
-                    showLabel = false,
-                )
+                if (live) {
+                    ControlButton(
+                        onClick = onGuide,
+                        icon = JedflixIcons.LiveTv,
+                        label = stringResource(R.string.player_guide),
+                        modifier = Modifier.then(toTimeline).testTag("player-guide"),
+                    )
+                } else {
+                    ControlButton(
+                        onClick = onSeekBack,
+                        icon = JedflixIcons.Replay10,
+                        label = stringResource(R.string.player_rewind),
+                        modifier = Modifier.then(toTimeline).testTag("player-rewind"),
+                        showLabel = false,
+                    )
+                    ControlButton(
+                        onClick = onSeekForward,
+                        icon = JedflixIcons.Forward10,
+                        label = stringResource(R.string.player_forward),
+                        modifier = Modifier.then(toTimeline).testTag("player-forward"),
+                        showLabel = false,
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 ControlButton(
                     onClick = onCaptions,
@@ -186,18 +197,22 @@ internal fun PlayerChrome(
             }
             Spacer(Modifier.height(16.dp))
             Box(modifier = Modifier.fillMaxWidth().height(22.dp)) {
-                if (!timelineFocused) {
+                if (!live && !timelineFocused) {
                     SeekHint(fraction = fraction, seekHintSec = seekHintSec)
                 }
             }
-            TimelineBar(
-                fraction = fraction,
-                focused = timelineFocused,
-                timelineFocus = timelineFocus,
-                playFocus = playFocus,
-                onFocused = { timelineFocused = it },
-                onScrubBy = onScrubBy,
-            )
+            if (live) {
+                LiveTimelineBar(fraction = fraction)
+            } else {
+                TimelineBar(
+                    fraction = fraction,
+                    focused = timelineFocused,
+                    timelineFocus = timelineFocus,
+                    playFocus = playFocus,
+                    onFocused = { timelineFocused = it },
+                    onScrubBy = onScrubBy,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
@@ -205,14 +220,16 @@ internal fun PlayerChrome(
                     style = MaterialTheme.typography.labelLarge,
                     color = Zinc300,
                 )
-                Text(
-                    text = if (duration > 0L) "−${PlaybackClock.formatMs(remaining)}" else "",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Zinc300,
-                )
+                if (!live) {
+                    Text(
+                        text = if (duration > 0L) "−${PlaybackClock.formatMs(remaining)}" else "",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Zinc300,
+                    )
+                }
             }
         }
-        if (timelineFocused) {
+        if (!live && timelineFocused) {
             ScrubPreview(
                 fraction = fraction,
                 positionMs = position,
@@ -283,6 +300,44 @@ private fun ScrubPreview(
                 fontWeight = FontWeight.Bold,
             )
         }
+    }
+}
+
+@Composable
+private fun LiveTimelineBar(fraction: Float) {
+    val liveLabel = stringResource(R.string.player_live)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .semantics { contentDescription = liveLabel }
+            .testTag("player-progress"),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(WarmWhite.copy(alpha = 0.22f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fraction)
+                    .background(JedflixRed),
+            )
+        }
+        Text(
+            text = liveLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = WarmWhite,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(3.dp))
+                .background(JedflixRed)
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 

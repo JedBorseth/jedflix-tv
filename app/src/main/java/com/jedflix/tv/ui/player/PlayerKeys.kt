@@ -13,6 +13,9 @@ internal fun handlePlayerKey(
     upNextOpen: Boolean,
     error: Boolean,
     skipVisible: Boolean,
+    live: Boolean = false,
+    guideOpen: Boolean = false,
+    overlayOpen: Boolean = false,
     onShowChrome: () -> Unit,
     onTogglePlay: () -> Unit,
     onPlay: () -> Unit,
@@ -29,6 +32,9 @@ internal fun handlePlayerKey(
     upNextOpen = upNextOpen,
     error = error,
     skipVisible = skipVisible,
+    live = live,
+    guideOpen = guideOpen,
+    overlayOpen = overlayOpen,
     onShowChrome = onShowChrome,
     onTogglePlay = onTogglePlay,
     onPlay = onPlay,
@@ -47,6 +53,9 @@ internal fun handlePlayerKey(
     upNextOpen: Boolean,
     error: Boolean,
     skipVisible: Boolean,
+    live: Boolean = false,
+    guideOpen: Boolean = false,
+    overlayOpen: Boolean = false,
     onShowChrome: () -> Unit,
     onTogglePlay: () -> Unit,
     onPlay: () -> Unit,
@@ -56,8 +65,9 @@ internal fun handlePlayerKey(
     onSkip: () -> Unit,
     onStop: () -> Unit,
 ): Boolean {
+    if (overlayOpen) return type == KeyEventType.KeyDown
     if (error || type != KeyEventType.KeyDown) return false
-    if (menuOpen || upNextOpen) return false
+    if (menuOpen || upNextOpen || guideOpen) return false
     val media = when (key) {
         Key.MediaPlay -> {
             onPlay(); true
@@ -69,10 +79,12 @@ internal fun handlePlayerKey(
             onTogglePlay(); true
         }
         Key.MediaRewind -> {
-            onSeekBack(); true
+            if (!live) onSeekBack()
+            true
         }
         Key.MediaFastForward -> {
-            onSeekForward(); true
+            if (!live) onSeekForward()
+            true
         }
         Key.MediaStop -> {
             onStop(); true

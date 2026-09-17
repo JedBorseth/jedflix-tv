@@ -4,6 +4,11 @@ import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.comet.StreamOption
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.live.LiveChannel
+import com.jedflix.tv.data.live.LiveChannels
+import com.jedflix.tv.data.live.LiveProgram
+import com.jedflix.tv.data.live.LiveSchedule
+import com.jedflix.tv.data.live.LiveUnplayable
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
@@ -24,6 +29,8 @@ class PlaybackResolver(
         mediaId: Int,
         season: Int?,
         episode: Int?,
+        startPositionMs: Long? = null,
+        liveChannelId: String? = null,
     ) {
         val details = tmdb.loadDetails(mediaType, mediaId)
         val episodeTitle = episodeTitle(mediaId, season, episode)
@@ -52,6 +59,8 @@ class PlaybackResolver(
                     episodeTitle = episodeTitle,
                     option = option,
                     fallbacks = ranked.drop(index + 1),
+                    startPositionMs = startPositionMs,
+                    liveChannelId = liveChannelId,
                 )
                 return
             } catch (e: CancellationException) {
@@ -65,6 +74,71 @@ class PlaybackResolver(
         throw lastError
     }
 
+    suspend fun autoStartLiveTune(channelId: String) {
+        val channel = playableChannel(channelId)
+        val tune = LiveSchedule.tune(channel, System.currentTimeMillis())
+        autoStartLiveQueue(channel.id, from = tune.program, firstOffsetMs = tune.offsetMs)
+    }
+
+    suspend fun autoStartLiveProgram(channelId: String, program: LiveProgram, offsetMs: Long) {
+        try {
+            autoStart(
+                mediaType = program.mediaType,
+                mediaId = program.tmdbId,
+                season = program.season,
+                episode = program.episode,
+                startPositionMs = offsetMs,
+                liveChannelId = channelId,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: StreamException) {
+            throw e
+        } catch (e: Exception) {
+            throw StreamException.Network(e)
+        }
+    }
+
+    suspend fun autoStartLiveNext(channelId: String, current: LiveProgram) {
+        val channel = playableChannel(channelId)
+        val next = LiveSchedule.nextProgram(channel, current)
+        autoStartLiveQueue(channel.id, from = next, firstOffsetMs = 0L)
+    }
+
+    private suspend fun autoStartLiveQueue(channelId: String, from: LiveProgram, firstOffsetMs: Long) {
+        val channel = playableChannel(channelId)
+        val programs = LiveSchedule.programsFrom(channel, from)
+        var lastError: StreamException = StreamException.NoStreams()
+        programs.forEachIndexed { index, program ->
+            try {
+                autoStart(
+                    mediaType = program.mediaType,
+                    mediaId = program.tmdbId,
+                    season = program.season,
+                    episode = program.episode,
+                    startPositionMs = if (index == 0) firstOffsetMs else 0L,
+                    liveChannelId = channelId,
+                )
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: StreamException.MissingKey) {
+                throw e
+            } catch (e: StreamException) {
+                LiveUnplayable.mark(program)
+                lastError = e
+            } catch (e: Exception) {
+                LiveUnplayable.mark(program)
+                lastError = StreamException.Network(e)
+            }
+        }
+        throw lastError
+    }
+
+    private fun playableChannel(channelId: String): LiveChannel =
+        LiveUnplayable.filter(LiveChannels.require(channelId))
+            ?: throw StreamException.NoStreams()
+
     suspend fun start(
         title: MediaTitle,
         imdbId: String?,
@@ -73,9 +147,15 @@ class PlaybackResolver(
         episodeTitle: String?,
         option: StreamOption,
         fallbacks: List<StreamOption>,
+        startPositionMs: Long? = null,
+        liveChannelId: String? = null,
     ) {
         val url = comet.resolvePlaybackUrl(option.playbackUrl)
-        val startPositionMs = library.playbackPosition(title.mediaType, title.id, season, episode)
+        val position = when {
+            liveChannelId != null -> startPositionMs ?: 0L
+            startPositionMs != null -> startPositionMs
+            else -> library.playbackPosition(title.mediaType, title.id, season, episode)
+        }
         session.start(
             PlaybackItem(
                 streamUrl = url,
@@ -91,10 +171,11 @@ class PlaybackResolver(
                 year = title.year,
                 rating = title.rating,
                 genres = title.genres,
-                startPositionMs = startPositionMs,
+                startPositionMs = position,
                 imdbId = imdbId,
                 resolution = option.resolution,
                 fallbacks = fallbacks,
+                liveChannelId = liveChannelId,
             ),
         )
     }

@@ -143,6 +143,14 @@ class SettingsStore(context: Context) {
         dataStore.edit { prefs -> prefs[QUALITY_PROFILE] = profile.stored }
     }
 
+    val lastLiveChannelId: Flow<String> = dataStore.data.map { prefs ->
+        prefs[LAST_LIVE_CHANNEL_ID].orEmpty()
+    }
+
+    suspend fun setLastLiveChannelId(channelId: String) {
+        dataStore.edit { prefs -> prefs[LAST_LIVE_CHANNEL_ID] = channelId }
+    }
+
     val playbackPrefs: Flow<PlaybackPrefs> = dataStore.data.map { prefs ->
         PlaybackPrefs(
             audioLanguage = prefs[AUDIO_LANGUAGE] ?: PlayerLanguages.ENGLISH,
@@ -186,6 +194,7 @@ class SettingsStore(context: Context) {
         val HOME_SHELF_ORDER = stringPreferencesKey("home_shelf_order")
         val HOME_SHELF_HIDDEN = stringPreferencesKey("home_shelf_hidden")
         val QUALITY_PROFILE = stringPreferencesKey("quality_profile")
+        val LAST_LIVE_CHANNEL_ID = stringPreferencesKey("last_live_channel_id")
     }
 }
 

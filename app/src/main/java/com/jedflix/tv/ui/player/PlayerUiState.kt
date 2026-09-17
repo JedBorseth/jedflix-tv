@@ -1,5 +1,6 @@
 package com.jedflix.tv.ui.player
 
+import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.playback.PlaybackItem
 import com.jedflix.tv.data.playback.SkipAction
 
@@ -34,6 +35,8 @@ data class PlayerUiState(
     val hasNextEpisode: Boolean = false,
     val skip: SkipAction? = null,
     val upNext: UpNextUi? = null,
+    val liveRetuneError: StreamException? = null,
+    val liveRetuning: Boolean = false,
 )
 
 sealed interface PlayerEvent {

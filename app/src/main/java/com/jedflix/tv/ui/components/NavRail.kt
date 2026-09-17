@@ -65,6 +65,7 @@ fun JedflixDrawer(
     settingsSelected: Boolean = false,
     onSelect: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onLive: () -> Unit,
     onSettings: () -> Unit,
     library: UserLibraryRepository,
     profileFocusRequester: FocusRequester? = null,
@@ -94,6 +95,7 @@ fun JedflixDrawer(
                 settingsSelected = settingsSelected,
                 onSelect = onSelect,
                 onSearch = onSearch,
+                onLive = onLive,
                 onSettings = onSettings,
                 modifier = Modifier.onFocusChanged { drawerOpen = it.hasFocus },
             )
@@ -142,6 +144,7 @@ fun NavigationDrawerScope.JedflixNavRail(
     settingsSelected: Boolean,
     onSelect: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onLive: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -212,6 +215,13 @@ fun NavigationDrawerScope.JedflixNavRail(
             onClick = { onSelect(CatalogSection.SHOWS) },
             testTag = "nav-shows",
             modifier = Modifier.focusRequester(sectionFocus.getValue(CatalogSection.SHOWS)),
+        )
+        RailItem(
+            icon = JedflixIcons.LiveTv,
+            label = stringResource(R.string.nav_live),
+            selected = false,
+            onClick = onLive,
+            testTag = "nav-live",
         )
 
         Spacer(Modifier.weight(1f))

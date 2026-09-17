@@ -91,6 +91,7 @@ fun SettingsScreen(
     backendHealth: BackendHealthMonitor,
     onSectionSelected: (CatalogSection) -> Unit,
     onSearch: () -> Unit,
+    onLive: () -> Unit,
     focusApiKey: Boolean = false,
 ) {
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(settingsStore))
@@ -133,6 +134,7 @@ fun SettingsScreen(
         settingsSelected = true,
         onSelect = onSectionSelected,
         onSearch = onSearch,
+        onLive = onLive,
         onSettings = {},
         library = library,
         contentFocusRequester = fieldFocus,

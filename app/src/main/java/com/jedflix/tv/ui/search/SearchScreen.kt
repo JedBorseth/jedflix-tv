@@ -74,6 +74,7 @@ fun SearchScreen(
     library: UserLibraryRepository,
     onSectionSelected: (CatalogSection) -> Unit,
     onSettings: () -> Unit,
+    onLive: () -> Unit,
     onTitleClick: (MediaTitle) -> Unit,
 ) {
     val viewModel: SearchViewModel = viewModel(factory = SearchViewModel.Factory(repository, library))
@@ -90,6 +91,7 @@ fun SearchScreen(
         searchSelected = true,
         onSelect = onSectionSelected,
         onSearch = {},
+        onLive = onLive,
         onSettings = onSettings,
         library = library,
         contentFocusRequester = fieldFocus,

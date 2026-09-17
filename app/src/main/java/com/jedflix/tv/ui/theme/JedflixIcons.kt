@@ -29,6 +29,12 @@ object JedflixIcons {
             "M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z",
         )
     }
+    val LiveTv: ImageVector by lazy {
+        icon(
+            "LiveTv",
+            "M21 6h-7.59l3.29-3.29L16 2l-4 4-4-4-.71.71L10.59 6H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 14H3V8h18v12zM9 10v8l7-4z",
+        )
+    }
     val Play: ImageVector by lazy { icon("Play", "M8 5v14l11-7z") }
     val Pause: ImageVector by lazy { icon("Pause", "M6 19h4V5H6v14zm8-14v14h4V5h-4z") }
     val Replay10: ImageVector by lazy {

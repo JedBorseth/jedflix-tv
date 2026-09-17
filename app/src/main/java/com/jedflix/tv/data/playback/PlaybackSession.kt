@@ -25,7 +25,11 @@ data class PlaybackItem(
     val resolution: String? = null,
     /** Remaining auto-pick candidates, already ranked, tried if this file fails to play. */
     val fallbacks: List<StreamOption> = emptyList(),
-)
+    /** Set when this item is a Live TV tune; queue advances on ENDED instead of library resume. */
+    val liveChannelId: String? = null,
+) {
+    val isLive: Boolean get() = liveChannelId != null
+}
 
 /** Single-slot hand-off between the stream picker and the player. */
 class PlaybackSession {

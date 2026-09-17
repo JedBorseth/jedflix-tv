@@ -31,6 +31,8 @@ import com.jedflix.tv.data.backend.BackendHealthMonitor
 import com.jedflix.tv.data.comet.CometClient
 import com.jedflix.tv.data.comet.StreamException
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.live.LiveChannels
+import com.jedflix.tv.data.live.LiveUnplayable
 import com.jedflix.tv.data.playback.PlaybackResolver
 import com.jedflix.tv.data.playback.PlaybackSession
 import com.jedflix.tv.data.settings.QualityProfile
@@ -55,6 +57,7 @@ import com.jedflix.tv.ui.streams.StreamPickerScreen
 import com.jedflix.tv.ui.streams.toKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
@@ -111,7 +114,7 @@ fun JedflixNavHost(
 
     fun startPlayback(type: MediaType, id: Int, season: Int? = null, episode: Int? = null) {
         if (startingPlayback) return
-        val request = PlaybackRequest(type, id, season, episode)
+        val request = PlaybackRequest(type = type, id = id, season = season, episode = episode)
         pendingStart = request
         startError = null
         startingPlayback = true
@@ -120,6 +123,81 @@ fun JedflixNavHost(
                 playbackResolver.autoStart(type, id, season, episode)
                 startingPlayback = false
                 navController.navigate(Routes.PLAYER)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: StreamException) {
+                startError = e
+                startingPlayback = false
+            } catch (e: Exception) {
+                startError = StreamException.Network(e)
+                startingPlayback = false
+            }
+        }
+    }
+
+    fun openLive(channelId: String? = null) {
+        if (startingPlayback) return
+        startError = null
+        startingPlayback = true
+        startJob = scope.launch {
+            val id = channelId
+                ?: settingsStore.lastLiveChannelId.first().takeIf { it.isNotBlank() }
+                ?: LiveChannels.defaultId
+            pendingStart = PlaybackRequest(liveChannelId = id)
+            try {
+                playbackResolver.autoStartLiveTune(id)
+                settingsStore.setLastLiveChannelId(id)
+                startingPlayback = false
+                navController.navigate(Routes.PLAYER)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: StreamException) {
+                startError = e
+                startingPlayback = false
+            } catch (e: Exception) {
+                startError = StreamException.Network(e)
+                startingPlayback = false
+            }
+        }
+    }
+
+    fun skipFailedLiveFromGuide() {
+        val channelId = pendingStart?.liveChannelId ?: return
+        LiveUnplayable.markCurrentNow(channelId)
+        val nextId = LiveUnplayable.filter(LiveChannels.all)
+            .let { channels -> channels.firstOrNull { it.id == channelId } ?: channels.firstOrNull() }
+            ?.id
+        cancelStart()
+        if (nextId != null) openLive(nextId)
+    }
+
+    fun skipCurrentLiveAndPlayNext() {
+        val playing = playbackSession.current ?: return
+        val channelId = playing.liveChannelId ?: return
+        val program = LiveChannels.byId(channelId)?.lineup?.firstOrNull {
+            it.tmdbId == playing.tmdbId &&
+                it.mediaType == playing.mediaType &&
+                it.season == playing.season &&
+                it.episode == playing.episode
+        }
+        if (program != null) LiveUnplayable.mark(program)
+        if (startingPlayback) return
+        startError = null
+        startingPlayback = true
+        startJob = scope.launch {
+            pendingStart = PlaybackRequest(liveChannelId = channelId)
+            try {
+                if (program != null) {
+                    playbackResolver.autoStartLiveNext(channelId, program)
+                } else {
+                    playbackResolver.autoStartLiveTune(channelId)
+                }
+                settingsStore.setLastLiveChannelId(channelId)
+                startingPlayback = false
+                navController.navigate(Routes.PLAYER) {
+                    popUpTo(Routes.PLAYER) { inclusive = true }
+                    launchSingleTop = true
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: StreamException) {
@@ -198,6 +276,7 @@ fun JedflixNavHost(
                             if (target != section) openSection(target)
                         },
                         onSearch = ::openSearch,
+                        onLive = ::openLive,
                         onSettings = ::openSettings,
                         onTitleClick = ::openTitle,
                         onContinueWatching = { item ->
@@ -213,6 +292,7 @@ fun JedflixNavHost(
                     library = library,
                     onSectionSelected = ::openSection,
                     onSettings = ::openSettings,
+                    onLive = ::openLive,
                     onTitleClick = ::openTitle,
                 )
             }
@@ -231,6 +311,7 @@ fun JedflixNavHost(
                     focusApiKey = entry.arguments?.getBoolean("focusKey") == true,
                     onSectionSelected = ::openSection,
                     onSearch = ::openSearch,
+                    onLive = ::openLive,
                 )
             }
 
@@ -281,11 +362,15 @@ fun JedflixNavHost(
                     library = library,
                     onPlay = {
                         navController.navigate(Routes.PLAYER) {
-                            popUpTo(Routes.STREAMS) { inclusive = true }
+                            popUpTo(Routes.PLAYER) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                     onOpenSettings = { openSettings(focusKey = true) },
                     onBack = { navController.popBackStack() },
+                    onRemoveFromGuide = playbackSession.current
+                        ?.takeIf { it.isLive && it.tmdbId == id && it.mediaType == type }
+                        ?.let { { skipCurrentLiveAndPlayNext() } },
                 )
             }
 
@@ -300,7 +385,15 @@ fun JedflixNavHost(
                     settingsStore = settingsStore,
                     tmdb = repository,
                     comet = cometClient,
-                    onExit = { navController.popBackStack() },
+                    playbackResolver = playbackResolver,
+                    onExit = {
+                        val live = playbackSession.current?.isLive == true
+                        if (live) {
+                            navController.popBackStack(CatalogSection.HOME.route, inclusive = false)
+                        } else {
+                            navController.popBackStack()
+                        }
+                    },
                     onSeriesComplete = { navController.popBackStack() },
                     onNeedPicker = { season, episode ->
                         val playing = playbackSession.current
@@ -315,9 +408,7 @@ fun JedflixNavHost(
                                     episode,
                                     auto = false,
                                 ),
-                            ) {
-                                popUpTo(Routes.PLAYER) { inclusive = true }
-                            }
+                            )
                         }
                     },
                 )
@@ -347,7 +438,11 @@ fun JedflixNavHost(
                     val request = pendingStart
                     cancelStart()
                     if (request != null) {
-                        startPlayback(request.type, request.id, request.season, request.episode)
+                        if (request.liveChannelId != null) {
+                            openLive()
+                        } else if (request.type != null && request.id != null) {
+                            startPlayback(request.type, request.id, request.season, request.episode)
+                        }
                     }
                 },
                 onOpenSettings = {
@@ -355,6 +450,7 @@ fun JedflixNavHost(
                     openSettings(focusKey = true)
                 },
                 onDismiss = ::cancelStart,
+                onRemoveFromGuide = pendingStart?.liveChannelId?.let { { skipFailedLiveFromGuide() } },
             )
         }
         }
@@ -362,8 +458,9 @@ fun JedflixNavHost(
 }
 
 private data class PlaybackRequest(
-    val type: MediaType,
-    val id: Int,
-    val season: Int?,
-    val episode: Int?,
+    val type: MediaType? = null,
+    val id: Int? = null,
+    val season: Int? = null,
+    val episode: Int? = null,
+    val liveChannelId: String? = null,
 )

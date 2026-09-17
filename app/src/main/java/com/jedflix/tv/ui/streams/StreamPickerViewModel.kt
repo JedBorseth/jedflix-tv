@@ -141,6 +141,7 @@ class StreamPickerViewModel(
                 episodeTitle = current.target.episodeTitle,
                 option = option,
                 fallbacks = fallbacks,
+                liveChannelId = playbackSession.current?.liveChannelId,
             )
             _state.value = current.copy(resolving = null, resolveError = null)
             _play.tryEmit(Unit)

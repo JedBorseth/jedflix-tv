@@ -5,6 +5,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,9 +28,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -83,6 +86,7 @@ fun StreamPickerScreen(
     onPlay: () -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit,
+    onRemoveFromGuide: (() -> Unit)? = null,
 ) {
     val viewModel: StreamPickerViewModel = viewModel(
         key = "streams-${mediaType.apiValue}-$mediaId-$season-$episode",
@@ -120,6 +124,7 @@ fun StreamPickerScreen(
                     onRetry = viewModel::retry,
                     onOpenSettings = onOpenSettings,
                     onBack = onBack,
+                    onRemoveFromGuide = onRemoveFromGuide,
                 )
                 is StreamPickerUiState.Ready -> PickerReady(state = current, onSelect = viewModel::select)
             }
@@ -336,9 +341,15 @@ private fun PickerError(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onBack: () -> Unit,
+    onRemoveFromGuide: (() -> Unit)? = null,
 ) {
     val primaryFocus = remember { FocusRequester() }
-    LaunchedEffect(state.kind) { runCatching { primaryFocus.requestFocus() } }
+    val removeFromGuide = onRemoveFromGuide
+    val liveNoStreams = removeFromGuide != null && state.kind == StreamErrorKind.NO_STREAMS
+    LaunchedEffect(state.kind, liveNoStreams) {
+        withFrameNanos { }
+        runCatching { primaryFocus.requestFocus() }
+    }
 
     val (titleRes, bodyRes) = when (state.kind) {
         StreamErrorKind.MISSING_KEY -> R.string.streams_error_missing_key_title to R.string.streams_error_missing_key
@@ -352,6 +363,10 @@ private fun PickerError(
         modifier = Modifier
             .fillMaxSize()
             .testTag("streams-error")
+            .focusGroup()
+            .focusProperties {
+                onExit = { cancelFocusChange() }
+            }
             .padding(start = ContentStartPadding, end = 48.dp, top = 40.dp),
     ) {
         PickerHeader(target = state.target, modifier = Modifier.width(380.dp))
@@ -378,8 +393,17 @@ private fun PickerError(
             }
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                when (state.kind) {
-                    StreamErrorKind.MISSING_KEY -> {
+                when {
+                    removeFromGuide != null && state.kind == StreamErrorKind.NO_STREAMS -> {
+                        PrimaryButton(
+                            label = stringResource(R.string.live_remove_from_guide),
+                            icon = JedflixIcons.Delete,
+                            modifier = Modifier.focusRequester(primaryFocus).testTag("live-remove-from-guide"),
+                            onClick = removeFromGuide,
+                        )
+                        SecondaryButton(label = stringResource(R.string.action_back), onClick = onBack)
+                    }
+                    state.kind == StreamErrorKind.MISSING_KEY -> {
                         PrimaryButton(
                             label = stringResource(R.string.action_open_settings),
                             icon = JedflixIcons.Settings,
@@ -388,7 +412,7 @@ private fun PickerError(
                         )
                         SecondaryButton(label = stringResource(R.string.action_back), onClick = onBack)
                     }
-                    StreamErrorKind.NO_IMDB -> {
+                    state.kind == StreamErrorKind.NO_IMDB -> {
                         PrimaryButton(
                             label = stringResource(R.string.action_back),
                             icon = null,
