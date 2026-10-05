@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.library.TitleFeedback
 import com.jedflix.tv.data.playback.ShowPlay
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
@@ -51,6 +52,13 @@ class DetailViewModel(
 
     fun toggleMyList(title: MediaTitle) {
         viewModelScope.launch { library.toggleMyList(title) }
+    }
+
+    fun toggleFeedback(title: MediaTitle, feedback: TitleFeedback) {
+        val selected = (_state.value as? DetailUiState.Ready)?.feedback
+        viewModelScope.launch {
+            library.setFeedback(title, feedback.takeUnless { it == selected })
+        }
     }
 
     fun onHeroFocused() {
@@ -149,10 +157,11 @@ class DetailViewModel(
             combine(
                 library.observeInMyList(mediaType, mediaId),
                 library.observeTitleProgress(mediaType, mediaId),
-            ) { inList, resume -> inList to resume }
-                .collect { (inList, resume) ->
+                library.observeFeedback(mediaType, mediaId),
+            ) { inList, resume, feedback -> Triple(inList, resume, feedback) }
+                .collect { (inList, resume, feedback) ->
                     val latest = _state.value as? DetailUiState.Ready ?: return@collect
-                    _state.value = latest.copy(inMyList = inList, resume = resume)
+                    _state.value = latest.copy(inMyList = inList, resume = resume, feedback = feedback)
                 }
         }
     }

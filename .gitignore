@@ -15,5 +15,9 @@ captures/
 .externalNativeBuild/
 .cxx/
 
+# Python recommendation service
+__pycache__/
+*.pyc
+
 # Maestro
 .maestro/tests/**/*.mp4

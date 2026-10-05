@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +52,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
+import com.jedflix.tv.data.settings.QualityProfile
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.tmdbBrowsePosterSize
 import com.jedflix.tv.data.tmdb.tmdbImageUrlAtSize
@@ -92,12 +94,24 @@ fun PosterCard(
     onFocused: (() -> Unit)? = null,
     onClick: () -> Unit = {},
 ) {
-    val placeholder = ColorPainter(Zinc800)
+    val placeholder = remember { ColorPainter(Zinc800) }
+    val context = LocalContext.current
     val density = LocalDensity.current
+    val browseQuality = LocalBrowseQuality.current
+    val lowQuality = browseQuality == QualityProfile.Low
     val posterUrl = tmdbImageUrlAtSize(
         title.posterUrl,
-        tmdbBrowsePosterSize(LocalBrowseQuality.current),
+        tmdbBrowsePosterSize(browseQuality),
     )
+    // Use the settled card size so the morph never rebuilds a request each frame.
+    val imageWidth = if (expanded) PosterPreviewWidth else PosterWidth
+    val posterRequest = remember(context, density, browseQuality, posterUrl, imageWidth) {
+        ImageRequest.Builder(context)
+            .data(posterUrl)
+            .fitDp(density, imageWidth, PosterHeight)
+            .crossfade(true)
+            .build()
+    }
     val width by animateDpAsState(
         targetValue = if (expanded) PosterPreviewWidth else PosterWidth,
         animationSpec = tween(TRAILER_PREVIEW_MORPH_MS, easing = FastOutSlowInEasing),
@@ -125,13 +139,13 @@ fun PosterCard(
             pressedContainerColor = Zinc800,
         ),
         scale = ClickableSurfaceDefaults.scale(
-            focusedScale = if (expanded) 1f else 1.08f,
-            pressedScale = if (expanded) 1f else 1.04f,
+            focusedScale = if (expanded || lowQuality) 1f else 1.08f,
+            pressedScale = if (expanded || lowQuality) 1f else 1.04f,
         ),
         border = ClickableSurfaceDefaults.border(
             focusedBorder = Border(border = BorderStroke(3.dp, WarmWhite), shape = PosterShape),
         ),
-        glow = ClickableSurfaceDefaults.glow(
+        glow = if (lowQuality) ClickableSurfaceDefaults.glow() else ClickableSurfaceDefaults.glow(
             focusedGlow = Glow(elevationColor = Color.White.copy(alpha = 0.35f), elevation = 14.dp),
         ),
     ) {
@@ -157,11 +171,7 @@ fun PosterCard(
                 )
             }
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(posterUrl)
-                    .fitDp(density, PosterPreviewWidth, PosterHeight)
-                    .crossfade(true)
-                    .build(),
+                model = posterRequest,
                 contentDescription = stringResource(R.string.cd_poster, title.title),
                 contentScale = ContentScale.Crop,
                 placeholder = placeholder,

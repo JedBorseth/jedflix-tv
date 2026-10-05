@@ -155,4 +155,7 @@
 
     <string name="cd_poster">Poster for %1$s</string>
     <string name="cd_backdrop">Backdrop for %1$s</string>
+    <string name="action_like">Like</string>
+    <string name="action_liked">Liked</string>
+    <string name="action_not_interested">Not interested</string>
 </resources>

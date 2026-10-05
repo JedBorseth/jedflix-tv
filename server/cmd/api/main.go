@@ -26,10 +26,11 @@ func main() {
 	defer stop()
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr: addr,
 		Handler: httpserver.New(httpserver.Config{
-			Version: Version,
-			ClipDir: os.Getenv("CLIP_DIR"),
+			Version:            Version,
+			ClipDir:            os.Getenv("CLIP_DIR"),
+			RecommendationsURL: os.Getenv("RECOMMENDATIONS_URL"),
 		}).Router(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

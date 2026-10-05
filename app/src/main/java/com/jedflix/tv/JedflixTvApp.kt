@@ -14,6 +14,7 @@ import com.jedflix.tv.data.library.RoomUserLibraryRepository
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.local.JedflixDatabase
 import com.jedflix.tv.data.playback.PlaybackSession
+import com.jedflix.tv.data.recommendations.RecommendationRepository
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.TmdbClient
 import com.jedflix.tv.data.tmdb.TmdbRepository
@@ -25,6 +26,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import java.io.File
 
 class JedflixTvApp : Application(), SingletonImageLoader.Factory {
 
@@ -36,6 +38,9 @@ class JedflixTvApp : Application(), SingletonImageLoader.Factory {
 
     val tmdbClient: TmdbClient by lazy { TmdbClient(BuildConfig.TMDB_API_KEY, BuildConfig.DEBUG) }
     val tmdbRepository: TmdbRepository by lazy { TmdbRepository(tmdbClient.api) }
+    val recommendationRepository: RecommendationRepository by lazy {
+        RecommendationRepository.create(File(filesDir, "recommendations"), BuildConfig.API_BASE_URL)
+    }
     val settingsStore: SettingsStore by lazy { SettingsStore(this) }
     val cometClient: CometClient by lazy { CometClient() }
     val playbackSession: PlaybackSession by lazy { PlaybackSession() }

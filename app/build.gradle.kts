@@ -36,8 +36,9 @@ android {
         applicationId = "com.jedflix.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.6.5"
+        versionCode = 20
+        versionName = "0.7.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
         buildConfigField("String", "TRAILER_CLIP_BASE_URL", "\"$trailerClipBaseUrl\"")
@@ -58,7 +59,8 @@ android {
             signingConfig = signingConfigs.getByName("upload")
         }
         release {
-            isMinifyEnabled = false
+            // Compose and coroutine hot paths benefit from R8's release optimizations.
+            isMinifyEnabled = true
             signingConfig = signingConfigs.getByName("upload")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -73,6 +75,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -99,6 +102,8 @@ configurations.configureEach {
 }
 
 dependencies {
+    // java.time also needs to work on the API 24/25 TVs we support.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -136,4 +141,6 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
 }

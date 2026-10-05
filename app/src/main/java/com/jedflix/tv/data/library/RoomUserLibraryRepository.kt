@@ -1,5 +1,11 @@
 package com.jedflix.tv.data.library
 
+import androidx.room.withTransaction
+import com.jedflix.tv.data.local.PlaybackSessionEntity
+import com.jedflix.tv.data.local.TitleFeedbackEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.jedflix.tv.data.local.JedflixDatabase
 import com.jedflix.tv.data.local.ProfileEntity
 import com.jedflix.tv.data.local.SearchQueryEntity
@@ -22,7 +28,7 @@ import kotlinx.coroutines.flow.combine
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RoomUserLibraryRepository(
-    database: JedflixDatabase,
+    private val database: JedflixDatabase,
     private val settingsStore: SettingsStore,
 ) : UserLibraryRepository {
 
@@ -30,6 +36,8 @@ class RoomUserLibraryRepository(
     private val progress = database.watchProgressDao()
     private val myList = database.myListDao()
     private val searches = database.searchQueryDao()
+    private val sessions = database.playbackSessionDao()
+    private val feedback = database.titleFeedbackDao()
 
     private val activeProfileId: Flow<Long> = combine(
         settingsStore.activeProfileId,
@@ -149,8 +157,70 @@ class RoomUserLibraryRepository(
     }
 
     override suspend fun recordPlayback(progress: PlaybackProgress) {
+        val profileId = progress.profileId ?: requireProfileId()
+        withContext(NonCancellable + Dispatchers.IO) {
+            database.withTransaction {
+                // A profile removed while a final checkpoint was queued stays removed.
+                if (profiles.get(profileId) == null) return@withTransaction
+                val existing = this@RoomUserLibraryRepository.progress.get(
+                    profileId, progress.mediaType.apiValue, progress.tmdbId,
+                    progress.season ?: 0, progress.episode ?: 0,
+                )
+                val prior = if (progress.sessionId.isNotEmpty()) {
+                    sessions.get(profileId, progress.sessionId)?.watchedMs ?: 0L
+                } else 0L
+                val delta = if (progress.sessionId.isNotEmpty()) {
+                    (progress.watchedMs - prior).coerceAtLeast(0L)
+                } else 0L
+                val current = progress.toEntity(profileId, progress.capturedAt)
+                // Older asynchronous saves may add time, but must not rewind resume position.
+                val latest = if (existing != null && existing.lastWatchedAt > progress.capturedAt) {
+                    existing
+                } else current
+                this@RoomUserLibraryRepository.progress.upsert(
+                    latest.copy(watchedMs = (existing?.watchedMs ?: 0L) + delta),
+                )
+                if (progress.sessionId.isNotEmpty()) {
+                    sessions.upsert(PlaybackSessionEntity(
+                        profileId, progress.sessionId, maxOf(prior, progress.watchedMs),
+                        maxOf(progress.capturedAt, existing?.lastWatchedAt ?: 0L),
+                    ))
+                }
+            }
+        }
+    }
+
+    override fun observeFeedback(mediaType: MediaType, tmdbId: Int): Flow<TitleFeedback?> =
+        activeProfileId.flatMapLatest { profileId ->
+            if (profileId == NO_PROFILE) return@flatMapLatest flowOf(null)
+            feedback.observe(profileId, mediaType.apiValue, tmdbId)
+                .map { TitleFeedback.fromApi(it?.value) }
+        }.distinctUntilChanged()
+
+    override suspend fun setFeedback(title: MediaTitle, feedback: TitleFeedback?) {
         val profileId = requireProfileId()
-        this.progress.upsert(progress.toEntity(profileId, System.currentTimeMillis()))
+        if (feedback == null) {
+            this.feedback.delete(profileId, title.mediaType.apiValue, title.id)
+        } else {
+            this.feedback.upsert(TitleFeedbackEntity(
+                profileId, title.mediaType.apiValue, title.id, feedback.apiValue,
+                System.currentTimeMillis(),
+            ))
+        }
+    }
+
+    override suspend fun recommendationSignals(): RecommendationSignals {
+        val profileId = requireProfileId()
+        return database.withTransaction {
+            // Watermarks are not full event histories; retain recent sessions for safe retries.
+            sessions.prune(System.currentTimeMillis() - SESSION_RETENTION_MS)
+            RecommendationSignals(
+                profileId = profileId,
+                history = progress.recommendationHistory(profileId, MAX_RECOMMENDATION_TITLES),
+                myList = myList.recommendationTitles(profileId, MAX_RECOMMENDATION_TITLES),
+                feedback = feedback.recommendationFeedback(profileId, MAX_RECOMMENDATION_TITLES),
+            )
+        }
     }
 
     override suspend fun playbackPosition(
@@ -202,5 +272,7 @@ class RoomUserLibraryRepository(
     private companion object {
         const val NO_PROFILE = -1L
         const val MAX_NAME_LENGTH = 20
+        const val MAX_RECOMMENDATION_TITLES = 200
+        const val SESSION_RETENTION_MS = 30L * 24 * 60 * 60 * 1_000
     }
 }

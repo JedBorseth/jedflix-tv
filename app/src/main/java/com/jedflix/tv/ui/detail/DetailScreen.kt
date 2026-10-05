@@ -71,6 +71,7 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryItem
+import com.jedflix.tv.data.library.TitleFeedback
 import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.playback.ShowPlay
 import com.jedflix.tv.data.tmdb.CastMember
@@ -248,6 +249,8 @@ private fun DetailContent(
                         details = details,
                         inMyList = state.inMyList,
                         resume = state.resume,
+                        feedback = state.feedback,
+                        onFeedback = { viewModel.toggleFeedback(details.title, it) },
                         playFocusRequester = playFocus,
                         downFocusRequester = null,
                         startingPlayback = startingPlayback,
@@ -353,6 +356,8 @@ private fun DetailHero(
     details: TitleDetails,
     inMyList: Boolean,
     resume: LibraryItem?,
+    feedback: TitleFeedback?,
+    onFeedback: (TitleFeedback) -> Unit,
     playFocusRequester: FocusRequester,
     downFocusRequester: FocusRequester?,
     startingPlayback: Boolean,
@@ -473,6 +478,27 @@ private fun DetailHero(
                     filled = false,
                     modifier = Modifier.railItemFocus(down = downFocusRequester),
                     onClick = onToggleMyList,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionButton(
+                    label = stringResource(
+                        if (feedback == TitleFeedback.LIKE) R.string.action_liked else R.string.action_like,
+                    ),
+                    icon = JedflixIcons.Check,
+                    filled = feedback == TitleFeedback.LIKE,
+                    modifier = Modifier.testTag("detail-like")
+                        .railItemFocus(down = downFocusRequester),
+                    onClick = { onFeedback(TitleFeedback.LIKE) },
+                )
+                ActionButton(
+                    label = stringResource(R.string.action_not_interested),
+                    icon = JedflixIcons.Close,
+                    filled = feedback == TitleFeedback.DISLIKE,
+                    modifier = Modifier.testTag("detail-not-interested")
+                        .railItemFocus(down = downFocusRequester),
+                    onClick = { onFeedback(TitleFeedback.DISLIKE) },
                 )
             }
         }

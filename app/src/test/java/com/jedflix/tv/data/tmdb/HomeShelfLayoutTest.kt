@@ -146,5 +146,16 @@ class HomeShelfLayoutTest {
         )
     }
 
+    @Test
+    fun personalizedShelvesKeepTrendingFirstAndSavedCatalogOrder() {
+        val prefs = HomeShelfLayout.resolve(HomeShelfConfig(order = listOf("horror", "jeds-movies")), factory)
+        val source = factory.map { CatalogRow(it.id, it.title, emptyList()) }
+        val personalized = listOf(CatalogRow("for-you", "For You", emptyList()))
+        assertEquals(
+            listOf(CatalogShelves.TRENDING_HOME, "for-you", "horror", "jeds-movies", "crave-movies"),
+            HomeShelfLayout.arrangeRows(source, prefs, personalized).map { it.id },
+        )
+    }
+
     private fun spec(id: String, title: String) = ShelfSpec.MovieList(id, title, "popular")
 }

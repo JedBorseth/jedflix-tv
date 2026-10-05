@@ -50,6 +50,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.BuildConfig
+import com.jedflix.tv.JedflixTvApp
 import com.jedflix.tv.R
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.LibraryRows
@@ -57,6 +58,7 @@ import com.jedflix.tv.data.library.UserLibraryRepository
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogSection
+import com.jedflix.tv.data.tmdb.CatalogShelves
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import com.jedflix.tv.ui.components.BillboardBackdrop
@@ -92,7 +94,10 @@ fun CatalogScreen(
 ) {
     val viewModel: CatalogViewModel = viewModel(
         key = section.name,
-        factory = CatalogViewModel.Factory(section, repository, library, settingsStore),
+        factory = CatalogViewModel.Factory(
+            section, repository, library, settingsStore,
+            (LocalContext.current.applicationContext as JedflixTvApp).recommendationRepository,
+        ),
     )
     val preview: TrailerPreviewViewModel = viewModel(
         key = "trailer-preview-${section.name}",
@@ -109,6 +114,7 @@ fun CatalogScreen(
     val contentReturnFocus = remember { FocusRequester() }
 
     LifecycleStartEffect(preview) {
+        viewModel.onHomeVisible()
         onStopOrDispose { preview.reset() }
     }
 
@@ -138,6 +144,7 @@ fun CatalogScreen(
                 CatalogUiState.Loading -> CatalogSkeletons(modifier = Modifier.padding(start = RailCollapsedWidth))
                 is CatalogUiState.Error -> CatalogError(kind = current.kind, onRetry = viewModel::retry)
                 is CatalogUiState.Ready -> CatalogContent(
+                    section = section,
                     catalog = current.catalog,
                     myListKeys = current.myListKeys,
                     continueWatching = current.continueWatching,
@@ -172,6 +179,7 @@ private object NoAutoScrollSpec : BringIntoViewSpec {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CatalogContent(
+    section: CatalogSection,
     catalog: Catalog,
     myListKeys: Set<String>,
     continueWatching: List<LibraryItem>,
@@ -192,20 +200,45 @@ private fun CatalogContent(
     onPreviewReset: () -> Unit,
     onPreviewMorphFinished: () -> Unit,
 ) {
-    val fallbackHero = catalog.featured.firstOrNull()
-        ?: catalog.rows.firstOrNull()?.items?.firstOrNull()
-        ?: return
-    var hero: MediaTitle by remember { mutableStateOf(fallbackHero) }
-    var pendingHero: MediaTitle by remember { mutableStateOf(fallbackHero) }
+    val trendingTitles = catalog.rows.filter {
+        it.drivesHero || (section == CatalogSection.HOME && it.id == CatalogShelves.TRENDING_HOME)
+    }.flatMap { it.items }
+    val fallbackHero = if (section == CatalogSection.HOME) {
+        catalog.featured.firstOrNull { candidate -> trendingTitles.any { it.key == candidate.key } }
+            ?: trendingTitles.firstOrNull()
+    } else {
+        catalog.featured.firstOrNull() ?: catalog.rows.firstOrNull()?.items?.firstOrNull()
+    }
+    val allowedHeroes = if (section == CatalogSection.HOME) trendingTitles else
+        (trendingTitles + catalog.featured + listOfNotNull(fallbackHero)).distinctBy { it.key }
+    var hero: MediaTitle? by remember { mutableStateOf(fallbackHero) }
+    var pendingHero: MediaTitle? by remember { mutableStateOf(fallbackHero) }
+    // Clamp immediately, before effects run, so removed Titles never remain playable.
+    val displayedHero = allowedHeroes.firstOrNull { it.key == hero?.key } ?: fallbackHero
+    val hasBillboard = displayedHero != null
+    val billboardOffset = if (hasBillboard) 1 else 0
     var heroHeldByShelf by remember { mutableStateOf(false) }
     var panGeneration by remember { mutableIntStateOf(0) }
-    LaunchedEffect(pendingHero.key) {
-        if (hero.key == pendingHero.key) return@LaunchedEffect
+    LaunchedEffect(pendingHero?.key, allowedHeroes) {
+        if (allowedHeroes.none { it.key == hero?.key }) {
+            hero = fallbackHero
+            pendingHero = fallbackHero
+            heroHeldByShelf = false
+            return@LaunchedEffect
+        }
+        val next = allowedHeroes.firstOrNull { it.key == pendingHero?.key } ?: fallbackHero
+        if (hero?.key == next?.key) return@LaunchedEffect
         if (heroHeldByShelf) delay(BILLBOARD_HERO_SETTLE_MS)
-        hero = pendingHero
+        hero = next
     }
-    val restoreTarget = remember(catalog.rows.map { it.id }) {
-        RailRestore.catalogTarget(restoredRowId, restoredItemKey, catalog.rows)
+    val restoreTarget = remember(catalog.rows.map { it.id }, hasBillboard) {
+        val saved = RailRestore.catalogTarget(restoredRowId, restoredItemKey, catalog.rows)
+        when {
+            !hasBillboard && saved is RailRestore.CatalogTarget.BillboardPlay -> RailRestore.CatalogTarget.FirstTitle
+            section == CatalogSection.HOME && hasBillboard && restoredRowId == null && restoredItemKey == null ->
+                RailRestore.CatalogTarget.BillboardPlay
+            else -> saved
+        }
     }
     val initialRow = when (val target = restoreTarget) {
         is RailRestore.CatalogTarget.Title ->
@@ -246,23 +279,31 @@ private fun CatalogContent(
                 val rowIndex = catalog.rows.indexOfFirst { it.id == target.rowId }
                 if (rowIndex > 0) {
                     val pivotPx = (listState.layoutInfo.viewportSize.height * ROW_PIVOT).toInt()
-                    listState.scrollToItem(index = rowIndex + 1, scrollOffset = -pivotPx)
+                    listState.scrollToItem(index = rowIndex + billboardOffset, scrollOffset = -pivotPx)
                     withFrameNanos { }
                 }
                 runCatching { restoredItemFocus.requestFocus() }
             }
             RailRestore.CatalogTarget.FirstTitle -> {
-                runCatching { firstCardFocus.requestFocus() }
+                runCatching { if (catalog.rows.isEmpty()) profileFocus.requestFocus() else firstCardFocus.requestFocus() }
             }
         }
     }
 
-    LaunchedEffect(focusedRow) {
+    LaunchedEffect(focusedRow, hasBillboard) {
         if (focusedRow == 0) {
             listState.animateScrollToItem(0)
         } else {
             val pivotPx = (listState.layoutInfo.viewportSize.height * ROW_PIVOT).toInt()
-            listState.animateScrollToItem(index = focusedRow + 1, scrollOffset = -pivotPx)
+            listState.animateScrollToItem(index = focusedRow + billboardOffset, scrollOffset = -pivotPx)
+        }
+    }
+
+    LaunchedEffect(hasBillboard) {
+        if (!hasBillboard && returnPlay) {
+            returnPlay = false
+            withFrameNanos { }
+            runCatching { if (catalog.rows.isEmpty()) profileFocus.requestFocus() else firstCardFocus.requestFocus() }
         }
     }
 
@@ -277,8 +318,8 @@ private fun CatalogContent(
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val catalogResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     Box(modifier = Modifier.fillMaxSize().testTag("catalog")) {
-        BillboardBackdrop(
-            title = hero,
+        if (displayedHero != null) BillboardBackdrop(
+            title = displayedHero,
             pan = true,
             panActive = catalogResumed && !scrolledAway,
             panGeneration = panGeneration,
@@ -286,7 +327,7 @@ private fun CatalogContent(
                 if (heroHeldByShelf) {
                     panGeneration++
                 } else {
-                    val next = BillboardCycle.next(catalog.featured, hero.key)
+                    val next = BillboardCycle.next(catalog.featured, displayedHero.key)
                     if (next != null) {
                         pendingHero = next
                         hero = next
@@ -304,18 +345,19 @@ private fun CatalogContent(
                 contentPadding = PaddingValues(bottom = 48.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                item(key = "billboard") {
+                if (displayedHero != null) item(key = "billboard") {
                     BillboardInfo(
-                        title = hero,
-                        inMyList = hero.key in myListKeys,
+                        title = displayedHero,
+                        inMyList = displayedHero.key in myListKeys,
                         playFocusRequester = playFocus,
                         contentReturnFocus = contentReturnFocus,
                         returnToPlay = returnPlay,
                         upFocusRequester = profileFocus,
                         downFocusRequester = firstRowEnter,
-                        onPlay = { onTitleClick(hero) },
-                        onMyList = { onToggleMyList(hero) },
-                            onPlayFocused = {
+                        onPlay = { onTitleClick(displayedHero) },
+                        onMyList = { onToggleMyList(displayedHero) },
+                        onPlayFocused = {
+                            focusedRow = 0
                             heroHeldByShelf = false
                             returnPlay = true
                             returnRowId = null
@@ -362,7 +404,9 @@ private fun CatalogContent(
                                 else -> null
                             },
                             returnItemKey = returnItemKey.takeIf { returnRowId == row.id },
-                            upFocusRequester = if (index == 0) playFocus else null,
+                            upFocusRequester = if (index == 0) {
+                                if (hasBillboard) playFocus else profileFocus
+                            } else null,
                             stateKey = "$profileStateKey-${row.id}",
                             restoreFocusRequester = when (val target = restoreTarget) {
                                 is RailRestore.CatalogTarget.Title ->

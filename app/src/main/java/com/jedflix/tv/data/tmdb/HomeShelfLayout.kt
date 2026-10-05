@@ -53,11 +53,15 @@ object HomeShelfLayout {
         billboardId: String = CatalogShelves.TRENDING_HOME,
     ): Set<String> = prefs.filter { it.visible }.map { it.id }.toSet() + billboardId
 
-    fun arrangeRows(rows: List<CatalogRow>, prefs: List<HomeShelfPref>): List<CatalogRow> {
+    fun arrangeRows(
+        rows: List<CatalogRow>,
+        prefs: List<HomeShelfPref>,
+        personalizedRows: List<CatalogRow> = emptyList(),
+    ): List<CatalogRow> {
         val byId = rows.associateBy { it.id }
         val rest = prefs.filter { it.visible }.mapNotNull { byId[it.id] }
             .filter { it.id != CatalogShelves.TRENDING_HOME }
-        return listOfNotNull(byId[CatalogShelves.TRENDING_HOME]) + rest
+        return listOfNotNull(byId[CatalogShelves.TRENDING_HOME]) + personalizedRows + rest
     }
 
     fun pinTrending(rows: List<CatalogRow>): List<CatalogRow> {

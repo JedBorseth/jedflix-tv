@@ -7,6 +7,10 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.library.LibraryItem
 import com.jedflix.tv.data.library.LibraryRows
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.recommendations.CachedRecommendations
+import com.jedflix.tv.data.recommendations.DiscoveryPolicy
+import com.jedflix.tv.data.recommendations.RecommendationRepository
+import com.jedflix.tv.data.recommendations.RecommendationRequest
 import com.jedflix.tv.data.settings.SettingsStore
 import com.jedflix.tv.data.tmdb.Catalog
 import com.jedflix.tv.data.tmdb.CatalogRow
@@ -21,10 +25,13 @@ import com.jedflix.tv.data.tmdb.ShelfPaging
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import com.jedflix.tv.ui.focus.RailRestore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 
 class CatalogViewModel(
@@ -32,13 +39,31 @@ class CatalogViewModel(
     private val repository: TmdbRepository,
     private val library: UserLibraryRepository,
     private val settingsStore: SettingsStore,
+    private val recommendations: RecommendationRepository? = null,
 ) : ViewModel() {
 
     private val tmdb = MutableStateFlow<CatalogUiState>(
         repository.peek(section)?.let { CatalogUiState.Ready(it) } ?: CatalogUiState.Loading,
     )
-    private val _state = MutableStateFlow(tmdb.value)
+    private val _state = MutableStateFlow(
+        tmdb.value.let { initial ->
+            if (section == CatalogSection.HOME && initial is CatalogUiState.Ready) {
+                initial.copy(catalog = DiscoveryPolicy.apply(initial.catalog))
+            } else initial
+        },
+    )
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
+    private data class DiscoveryState(
+        val profileId: Long,
+        val cached: CachedRecommendations? = null,
+        val dislikedKeys: Set<String> = emptySet(),
+    )
+    private val discovery = MutableStateFlow<DiscoveryState?>(null)
+    private var activeProfileId: Long? = null
+    private var lastRefreshProfile: Long? = null
+    private var recommendationJob: Job? = null
+    private var refillJob: Job? = null
+    private var pendingDiscovery: DiscoveryState? = null
 
     private val mediaFilter: MediaType? = when (section) {
         CatalogSection.HOME -> null
@@ -46,10 +71,10 @@ class CatalogViewModel(
         CatalogSection.SHOWS -> MediaType.TV
     }
 
-    var focusRowId: String? = null
-        private set
-    var focusItemKey: String? = null
-        private set
+    private data class FocusIdentity(val rowId: String?, val itemKey: String?)
+    @Volatile private var focusIdentity = FocusIdentity(null, null)
+    val focusRowId: String? get() = focusIdentity.rowId
+    val focusItemKey: String? get() = focusIdentity.itemKey
     var profileStateKey: String = "profile"
         private set
 
@@ -57,6 +82,13 @@ class CatalogViewModel(
         if (section == CatalogSection.HOME) HomeShelfLayout.resolve(HomeShelfConfig()) else null
 
     init {
+        if (section == CatalogSection.HOME && recommendations != null) {
+            viewModelScope.launch {
+                library.observeProfiles().collect { profiles ->
+                    if (profiles.isNotEmpty()) recommendations.retainProfiles(profiles.map { it.id }.toSet())
+                }
+            }
+        }
         viewModelScope.launch {
             var previousProfile: Long? = null
             library.observeActiveProfile().collect { profile ->
@@ -66,36 +98,59 @@ class CatalogViewModel(
                 }
                 previousProfile = id
                 profileStateKey = id?.toString() ?: "profile"
+                if (activeProfileId != id) {
+                    activeProfileId = id
+                    discovery.value = null
+                    pendingDiscovery = null
+                    recommendationJob?.cancel()
+                    lastRefreshProfile = null
+                    refreshRecommendations()
+                }
             }
         }
         viewModelScope.launch {
             if (section == CatalogSection.HOME) {
                 combine(
-                    tmdb,
+                    combine(tmdb, discovery) { catalog, personalized -> catalog to personalized },
                     library.observeContinueWatching(mediaFilter),
                     library.observeMyList(mediaFilter),
                     library.observeWatchHistory(mediaFilter),
                     settingsStore.homeShelfConfig,
-                ) { tmdbState, continueWatching, myList, history, config ->
+                ) { catalogAndDiscovery, continueWatching, myList, history, config ->
+                    val (tmdbState, personalized) = catalogAndDiscovery
                     when (tmdbState) {
-                        is CatalogUiState.Ready -> CatalogUiState.Ready(
-                            catalog = mergePersonalRows(
+                        is CatalogUiState.Ready -> {
+                            val merged = mergePersonalRows(
                                 tmdbState.catalog.copy(
                                     rows = HomeShelfLayout.arrangeRows(
                                         tmdbState.catalog.rows,
                                         HomeShelfLayout.resolve(config),
+                                        personalized?.cached?.response?.shelves.orEmpty()
+                                            .take(3).mapNotNull { it.toRow() },
                                     ),
                                 ),
                                 continueWatching,
                                 myList,
                                 history,
-                            ),
-                            myListKeys = myList.map { it.key }.toSet(),
-                            continueWatching = continueWatching,
-                        )
+                            )
+                            val now = System.currentTimeMillis()
+                            val focused = focusIdentity
+                            CatalogUiState.Ready(
+                                catalog = DiscoveryPolicy.apply(
+                                    merged,
+                                    verifiedKeys = personalized?.cached?.verifiedKeys(now).orEmpty(),
+                                    dislikedKeys = personalized?.dislikedKeys.orEmpty() +
+                                        personalized?.cached?.ineligibleKeys(now).orEmpty(),
+                                    focusedRowId = focused.rowId,
+                                    focusedItemKey = focused.itemKey,
+                                ),
+                                myListKeys = myList.map { it.key }.toSet(),
+                                continueWatching = continueWatching,
+                            )
+                        }
                         else -> tmdbState
                     }
-                }.collect { _state.value = it }
+                }.flowOn(Dispatchers.Default).collect { _state.value = it }
             } else {
                 combine(
                     tmdb,
@@ -128,19 +183,20 @@ class CatalogViewModel(
 
     fun retry() = load(force = true)
 
+    fun onHomeVisible() = refreshRecommendations(force = true)
+
     fun onBillboardPlayFocused() {
-        focusRowId = null
-        focusItemKey = RailRestore.BILLBOARD_PLAY
+        focusIdentity = FocusIdentity(null, RailRestore.BILLBOARD_PLAY)
+        pendingDiscovery?.let { discovery.value = it }
+        pendingDiscovery = null
     }
 
     fun onTitleFocused(rowId: String, itemKey: String) {
-        focusRowId = rowId
-        focusItemKey = itemKey
+        focusIdentity = FocusIdentity(rowId, itemKey)
     }
 
     fun clearFocusMemory() {
-        focusRowId = null
-        focusItemKey = null
+        focusIdentity = FocusIdentity(null, null)
     }
 
     fun onShelfItemFocused(rowId: String, index: Int, itemCount: Int, hasMore: Boolean) {
@@ -165,6 +221,8 @@ class CatalogViewModel(
             }
             try {
                 tmdb.value = CatalogUiState.Ready(repository.loadCatalog(section, force, homeShelves))
+                refreshRecommendations(force)
+                refillDiscoveryShelves()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: MissingTmdbKeyException) {
@@ -175,15 +233,71 @@ class CatalogViewModel(
         }
     }
 
+    /** Once per Home/profile load, never from focus or pagination callbacks. */
+    private fun refreshRecommendations(force: Boolean = false) {
+        if (section != CatalogSection.HOME) return
+        val client = recommendations ?: return
+        val profileId = activeProfileId ?: return
+        val catalog = (tmdb.value as? CatalogUiState.Ready)?.catalog ?: return
+        if (lastRefreshProfile == profileId && recommendationJob?.isActive == true) return
+        if (!force && lastRefreshProfile == profileId) return
+        lastRefreshProfile = profileId
+        recommendationJob?.cancel()
+        recommendationJob = viewModelScope.launch {
+            val cached = client.cached(profileId)
+            if (activeProfileId != profileId) return@launch
+            publishDiscovery(DiscoveryState(profileId, cached))
+            val signals = try {
+                library.recommendationSignals()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return@launch
+            }
+            if (signals.profileId != profileId || activeProfileId != profileId) return@launch
+            val dislikes = signals.feedback.filter { it.value == "dislike" }
+                .map { "${it.mediaType}-${it.tmdbId}" }.toSet()
+            publishDiscovery(DiscoveryState(profileId, cached, dislikes))
+            val request = RecommendationRequest.from(signals, catalog.rows.flatMap { it.items })
+            val refreshed = client.refresh(profileId, request)
+            if (activeProfileId == profileId) publishDiscovery(DiscoveryState(profileId, refreshed, dislikes))
+        }
+    }
+
+    private fun publishDiscovery(updated: DiscoveryState) {
+        if (focusRowId != null) pendingDiscovery = updated else discovery.value = updated
+    }
+
+    /** Refill the first thin discovery shelves in a batch, outside D-pad handling. */
+    private fun refillDiscoveryShelves() {
+        if (section != CatalogSection.HOME || refillJob?.isActive == true) return
+        val catalog = (tmdb.value as? CatalogUiState.Ready)?.catalog ?: return
+        refillJob = viewModelScope.launch(Dispatchers.Default) {
+            val filtered = DiscoveryPolicy.apply(catalog)
+            val counts = filtered.rows.associate { it.id to it.items.size }
+            val thin = catalog.rows.filter { it.hasMore && (counts[it.id] ?: 0) < 12 }.take(6)
+            var updated: Catalog? = null
+            for (row in thin) {
+                try {
+                    repository.loadMore(section, row.id)?.let { updated = it }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) { /* Keep the first page when a refill fails. */ }
+            }
+            updated?.let { tmdb.value = CatalogUiState.Ready(it) }
+        }
+    }
+
     class Factory(
         private val section: CatalogSection,
         private val repository: TmdbRepository,
         private val library: UserLibraryRepository,
         private val settingsStore: SettingsStore,
+        private val recommendations: RecommendationRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-            CatalogViewModel(section, repository, library, settingsStore) as T
+            CatalogViewModel(section, repository, library, settingsStore, recommendations) as T
     }
 }
 

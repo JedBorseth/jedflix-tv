@@ -23,6 +23,10 @@ interface UserLibraryRepository {
     fun observeInMyList(mediaType: MediaType, tmdbId: Int): Flow<Boolean>
     fun observeTitleProgress(mediaType: MediaType, tmdbId: Int): Flow<LibraryItem?>
 
+    fun observeFeedback(mediaType: MediaType, tmdbId: Int): Flow<TitleFeedback?>
+    suspend fun setFeedback(title: MediaTitle, feedback: TitleFeedback?)
+    suspend fun recommendationSignals(): RecommendationSignals
+
     suspend fun toggleMyList(title: MediaTitle)
     suspend fun recordPlayback(progress: PlaybackProgress)
     suspend fun playbackPosition(mediaType: MediaType, tmdbId: Int, season: Int?, episode: Int?): Long

@@ -17,4 +17,9 @@ data class PlaybackProgress(
     val year: String?,
     val rating: Double?,
     val genres: List<String>,
+    /** Cumulative active playing time within this session, never media position. */
+    val sessionId: String = "",
+    val watchedMs: Long = 0L,
+    val capturedAt: Long = System.currentTimeMillis(),
+    val profileId: Long? = null,
 )

@@ -37,8 +37,11 @@ data class PlaybackPrefs(
 /**
  * Device-local preferences. The Real-Debrid key stays on this client and is not synced.
  */
-class SettingsStore(context: Context) {
-    private val dataStore = context.applicationContext.settingsDataStore
+class SettingsStore(
+    context: Context,
+    providedDataStore: DataStore<Preferences>? = null,
+) {
+    private val dataStore = providedDataStore ?: context.applicationContext.settingsDataStore
 
     val realDebridApiKey: Flow<String> = dataStore.data.map { prefs ->
         prefs[REAL_DEBRID_API_KEY].orEmpty()

@@ -1,17 +1,11 @@
-# kotlinx.serialization
--keepattributes *Annotation*, InnerClasses
--dontnote kotlinx.serialization.AnnotationsKt
--keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
--keepclasseswithmembers class kotlinx.serialization.json.** { kotlinx.serialization.KSerializer serializer(...); }
--keep,includedescriptorclasses class com.jedflix.tv.**$$serializer { *; }
--keepclassmembers class com.jedflix.tv.** { *** Companion; }
--keepclasseswithmembers class com.jedflix.tv.** { kotlinx.serialization.KSerializer serializer(...); }
+# Retrofit, kotlinx.serialization, Room and Media3 ship their own consumer rules.
+# Those rules retain service signatures/annotations, serializer lookup and generated
+# database construction while allowing the rest of the app to be optimized.
 
-# Retrofit / OkHttp
--dontwarn okhttp3.**
--dontwarn okio.**
--dontwarn retrofit2.**
--keepattributes Signature, Exceptions
--keep,allowobfuscation,allowshrinking interface retrofit2.Call
--keep,allowobfuscation,allowshrinking class retrofit2.Response
--keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+# Nextlib 1.10.1-0.13.0 protects its native entry points, but FFmpeg's audio JNI
+# also looks up this Java callback by its original name and parameter signature.
+# Keep the callback and descriptor class names; no package-wide keep is needed.
+# https://github.com/anilbeesetti/nextlib/blob/main/media3ext/src/main/cpp/ffaudio.cpp
+-keepclassmembers,includedescriptorclasses class io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegAudioDecoder {
+    private java.nio.ByteBuffer growOutputBuffer(androidx.media3.decoder.SimpleDecoderOutputBuffer, int);
+}

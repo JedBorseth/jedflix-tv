@@ -3,6 +3,13 @@
 package com.jedflix.tv.ui.player
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
+import com.jedflix.tv.data.playback.WatchedTimeCounter
+import java.util.UUID
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -60,7 +67,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
 /** Owns the ExoPlayer so it survives recomposition and is released exactly once. */
@@ -90,6 +96,17 @@ class PlayerViewModel(
     private val trackSelector = configured.trackSelector
 
     private var didSeek = item.startPositionMs <= 0L
+    private val watchedTime = WatchedTimeCounter(SystemClock::elapsedRealtime, eligible = !item.isLive)
+    private var viewingSessionId = UUID.randomUUID().toString()
+    private var playbackProfileId: Long? = null
+    private var lastCheckpointAt = 0L
+    // Small final writes can finish after ViewModel disposal without blocking the UI thread.
+    private val progressJob = SupervisorJob()
+    private val progressScope = CoroutineScope(
+        progressJob + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+            Log.e("Jedflix", "Could not save playback progress", error)
+        },
+    )
     private var persistJob: Job? = null
     private var prefs: PlaybackPrefs = PlaybackPrefs()
     private var nextRef: EpisodeRef? = null
@@ -138,6 +155,7 @@ class PlayerViewModel(
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            watchedTime.setPlaying(isPlaying)
             _state.value = _state.value.copy(isPlaying = isPlaying)
             if (!isPlaying) persistProgress()
         }
@@ -162,6 +180,9 @@ class PlayerViewModel(
     init {
         prefs = runBlocking { settingsStore.playbackPrefs.first() }
         applyPrefs(prefs)
+        viewModelScope.launch {
+            playbackProfileId = library.observeActiveProfile().first()?.id
+        }
         player.addListener(listener)
         attachItem(_state.value.item, play = true)
         persistJob = viewModelScope.launch {
@@ -304,14 +325,14 @@ class PlayerViewModel(
         nextLookupJob?.cancel()
         skipJob?.cancel()
         fallbackJob?.cancel()
+        watchedTime.setPlaying(false)
         val snapshot = captureProgress()
         player.removeListener(listener)
         player.release()
-        if (snapshot != null && !_state.value.item.isLive) {
-            runBlocking {
-                withContext(Dispatchers.IO) { library.recordPlayback(snapshot) }
-            }
+        if (snapshot != null) {
+            progressScope.launch { library.recordPlayback(snapshot) }
         }
+        progressJob.complete()
     }
 
     private fun attachItem(item: PlaybackItem, play: Boolean) {
@@ -532,19 +553,19 @@ class PlayerViewModel(
     private fun persistProgress() {
         if (_state.value.error || _state.value.item.isLive) return
         val snapshot = captureProgress() ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            library.recordPlayback(snapshot)
-        }
+        progressScope.launch { library.recordPlayback(snapshot) }
     }
 
     private fun captureProgress(): PlaybackProgress? {
         val item = _state.value.item
+        if (item.isLive || playbackProfileId == null) return null
         val duration = player.duration.takeIf { it > 0L } ?: 0L
         val position = when {
             player.playbackState == Player.STATE_ENDED && duration > 0L -> duration
             else -> player.currentPosition.coerceAtLeast(0L)
         }
         if (position <= 0L && duration <= 0L) return null
+        lastCheckpointAt = maxOf(System.currentTimeMillis(), lastCheckpointAt + 1L)
         return PlaybackProgress(
             mediaType = item.mediaType,
             tmdbId = item.tmdbId,
@@ -559,6 +580,10 @@ class PlayerViewModel(
             year = item.year,
             rating = item.rating,
             genres = item.genres,
+            sessionId = viewingSessionId,
+            watchedMs = watchedTime.snapshotMs(),
+            profileId = playbackProfileId,
+            capturedAt = lastCheckpointAt,
         )
     }
 
@@ -712,7 +737,10 @@ class PlayerViewModel(
 
     private fun commitNext(next: PlaybackItem) {
         countdownJob?.cancel()
+        watchedTime.setPlaying(false)
         persistProgress()
+        watchedTime.reset(eligible = !next.isLive)
+        viewingSessionId = UUID.randomUUID().toString()
         playbackSession.start(next)
         prefs = runBlocking { settingsStore.playbackPrefs.first() }
         applyPrefs(prefs)

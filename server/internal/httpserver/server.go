@@ -22,11 +22,15 @@ type Config struct {
 	// ClipDir holds the 15s trailer clips served at GET /clips/{youtubeKey}.mp4.
 	// Empty disables the route (every clip is a 404).
 	ClipDir string
+	// RecommendationsURL is the internal model sidecar, never a client-supplied URL.
+	RecommendationsURL  string
+	RecommendationsHTTP *http.Client
 }
 
 // Server owns the router and the handlers behind it.
 type Server struct {
-	cfg Config
+	cfg                Config
+	recommendationGate chan struct{}
 }
 
 // New builds a Server; call Router to get the http.Handler.
@@ -34,7 +38,7 @@ func New(cfg Config) *Server {
 	if cfg.Version == "" {
 		cfg.Version = "dev"
 	}
-	return &Server{cfg: cfg}
+	return &Server{cfg: cfg, recommendationGate: make(chan struct{}, 1)}
 }
 
 // Router returns the fully wired http.Handler.
@@ -45,17 +49,18 @@ func (s *Server) Router() http.Handler {
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 
-	// The Android TV client is not a browser, but a same-host web client may
-	// call this API later; read-only CORS is safe to allow broadly.
+	// The Android TV client is not a browser; a future same-host web client
+	// may also call the stateless recommendation endpoint without credentials.
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{http.MethodGet, http.MethodHead, http.MethodOptions},
+		AllowedMethods:   []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodOptions},
 		AllowedHeaders:   []string{"Accept", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
 	r.Get("/health", s.handleHealth)
+	r.Post("/recommendations", s.handleRecommendations)
 	r.Get("/clips/{file}", s.handleClip)
 	r.Head("/clips/{file}", s.handleClip)
 

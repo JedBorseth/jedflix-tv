@@ -1,5 +1,6 @@
 package com.jedflix.tv.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -45,6 +46,7 @@ data class WatchProgressEntity(
     val year: String?,
     val rating: Double?,
     val genres: String,
+    @ColumnInfo(defaultValue = "0") val watchedMs: Long = 0L,
 )
 
 @Entity(
@@ -97,4 +99,38 @@ data class SearchQueryEntity(
     val profileId: Long,
     val query: String,
     val searchedAt: Long,
+)
+
+/** One watermark per viewing session makes retries/out-of-order saves idempotent. */
+@Entity(
+    tableName = "playback_sessions",
+    primaryKeys = ["profileId", "sessionId"],
+    foreignKeys = [ForeignKey(
+        entity = ProfileEntity::class,
+        parentColumns = ["id"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("profileId")],
+)
+data class PlaybackSessionEntity(
+    val profileId: Long,
+    val sessionId: String,
+    val watchedMs: Long,
+    val updatedAt: Long,
+)
+
+@Entity(
+    tableName = "title_feedback",
+    primaryKeys = ["profileId", "mediaType", "tmdbId"],
+    foreignKeys = [ForeignKey(
+        entity = ProfileEntity::class,
+        parentColumns = ["id"], childColumns = ["profileId"], onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("profileId")],
+)
+data class TitleFeedbackEntity(
+    val profileId: Long,
+    val mediaType: String,
+    val tmdbId: Int,
+    val value: String,
+    val updatedAt: Long,
 )

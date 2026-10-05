@@ -41,6 +41,10 @@ jobs:
           go vet ./...
           go test ./...
 
+      - name: Test recommendation policy and ranking
+        working-directory: server/recommender
+        run: python3 -m unittest discover -v
+
   build:
     needs: test
     if: github.event_name != 'pull_request'
@@ -75,6 +79,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build and push CPU recommendation model service
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          file: server/recommender/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/jedborseth/jedflix-tv/recommender:${{ github.sha }}
+            ghcr.io/jedborseth/jedflix-tv/recommender:latest
+          cache-from: type=gha,scope=recommender
+          cache-to: type=gha,scope=recommender,mode=max
+
   deploy:
     needs: build
     if: github.event_name != 'pull_request'
@@ -85,6 +102,18 @@ jobs:
       contents: read
       packages: read
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Refresh production compose configuration
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          source: server/docker-compose.yml
+          target: ${{ vars.TV_API_DIR || '/home/jedborseth/jedflix-tv-api' }}
+          strip_components: 1
+
       - name: Pull latest image and restart on server
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -109,21 +138,24 @@ jobs:
             # .env (e.g. clipgen-dev) would otherwise 404 on GHCR.
             unset COMPOSE_PROFILES || true
             export TV_API_TAG="${GIT_SHA}"
-            docker compose pull api
-            docker compose up -d --remove-orphans --no-deps api
+            docker compose pull api recommender
+            docker compose up -d --remove-orphans recommender api
             docker logout ghcr.io >/dev/null 2>&1 || true
             docker image prune -f >/dev/null
-            echo "== Waiting for jedflix-tv-api to report healthy =="
-            for i in $(seq 1 20); do
+            echo "== Waiting for API and real recommendation model to report healthy =="
+            for i in $(seq 1 80); do
               health_status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-api 2>/dev/null || echo "missing")
-              if [ "$health_status" = "healthy" ]; then
+              model_status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-recommender 2>/dev/null || echo "missing")
+              if [ "$health_status" = "healthy" ] && [ "$model_status" = "healthy" ]; then
                 docker exec jedflix-tv-api curl -fsS http://127.0.0.1:8080/health
+                docker exec jedflix-tv-api curl -fsS http://recommender:8090/health
                 echo
                 echo "deployed ${GIT_SHA}"
                 exit 0
               fi
               sleep 3
             done
-            echo "container never became healthy (status: $health_status)"
+            echo "services never became healthy (API: $health_status model: $model_status)"
             docker logs --tail 50 jedflix-tv-api || true
+            docker logs --tail 50 jedflix-tv-recommender || true
             exit 1

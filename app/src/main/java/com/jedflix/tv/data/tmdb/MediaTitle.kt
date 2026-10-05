@@ -20,6 +20,7 @@ data class MediaTitle(
     val year: String?,
     val rating: Double?,
     val genres: List<String>,
+    val releaseDate: String? = null,
 ) {
     val key: String get() = "${mediaType.apiValue}-$id"
 }
@@ -99,6 +100,7 @@ fun TmdbMediaDto.toMediaTitle(fallbackType: MediaType?): MediaTitle? {
         year = date?.take(4)?.takeIf { it.length == 4 },
         rating = voteAverage?.takeIf { it > 0.0 },
         genres = genreIds.mapNotNull { TmdbGenres.name(type, it) }.take(3),
+        releaseDate = date,
     )
 }
 
@@ -116,6 +118,7 @@ fun TmdbDetailsDto.toTitleDetails(type: MediaType): TitleDetails? {
         year = date?.take(4)?.takeIf { it.length == 4 },
         rating = voteAverage?.takeIf { it > 0.0 },
         genres = genres.map { it.name }.filter { it.isNotBlank() }.take(4),
+        releaseDate = date,
     )
     val credits = (if (type == MediaType.MOVIE) credits else aggregateCredits)?.cast.orEmpty()
     val runtime = if (type == MediaType.MOVIE) {

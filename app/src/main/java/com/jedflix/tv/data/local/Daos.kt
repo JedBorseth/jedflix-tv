@@ -6,6 +6,9 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+import com.jedflix.tv.data.library.RecommendationWatch
+import com.jedflix.tv.data.library.RecommendationTitle
+import com.jedflix.tv.data.library.RecommendationFeedback
 
 @Dao
 interface ProfileDao {
@@ -33,6 +36,15 @@ interface ProfileDao {
 
 @Dao
 interface WatchProgressDao {
+    // SQLite's single MAX aggregate selects position/duration from the latest row.
+    @Query("""
+        SELECT tmdbId, mediaType, SUM(watchedMs) AS watchedMs, positionMs, durationMs,
+               MAX(lastWatchedAt) AS lastWatchedAt
+        FROM watch_progress WHERE profileId = :profileId
+        GROUP BY mediaType, tmdbId ORDER BY lastWatchedAt DESC LIMIT :limit
+    """)
+    suspend fun recommendationHistory(profileId: Long, limit: Int): List<RecommendationWatch>
+
     @Query("SELECT * FROM watch_progress WHERE profileId = :profileId ORDER BY lastWatchedAt DESC")
     fun observeAll(profileId: Long): Flow<List<WatchProgressEntity>>
 
@@ -67,6 +79,9 @@ interface WatchProgressDao {
 
 @Dao
 interface MyListDao {
+    @Query("SELECT tmdbId, mediaType FROM my_list WHERE profileId = :profileId ORDER BY addedAt DESC LIMIT :limit")
+    suspend fun recommendationTitles(profileId: Long, limit: Int): List<RecommendationTitle>
+
     @Query("SELECT * FROM my_list WHERE profileId = :profileId ORDER BY addedAt DESC")
     fun observeAll(profileId: Long): Flow<List<MyListEntity>>
 
@@ -117,4 +132,31 @@ interface SearchQueryDao {
 
     @Query("DELETE FROM recent_searches WHERE profileId = :profileId AND query = :query")
     suspend fun delete(profileId: Long, query: String)
+}
+
+@Dao
+interface PlaybackSessionDao {
+    @Query("SELECT * FROM playback_sessions WHERE profileId = :profileId AND sessionId = :sessionId")
+    suspend fun get(profileId: Long, sessionId: String): PlaybackSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PlaybackSessionEntity)
+
+    @Query("DELETE FROM playback_sessions WHERE updatedAt < :before")
+    suspend fun prune(before: Long)
+}
+
+@Dao
+interface TitleFeedbackDao {
+    @Query("SELECT * FROM title_feedback WHERE profileId = :profileId AND mediaType = :mediaType AND tmdbId = :tmdbId")
+    fun observe(profileId: Long, mediaType: String, tmdbId: Int): Flow<TitleFeedbackEntity?>
+
+    @Query("SELECT tmdbId, mediaType, value, updatedAt FROM title_feedback WHERE profileId = :profileId ORDER BY updatedAt DESC LIMIT :limit")
+    suspend fun recommendationFeedback(profileId: Long, limit: Int): List<RecommendationFeedback>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: TitleFeedbackEntity)
+
+    @Query("DELETE FROM title_feedback WHERE profileId = :profileId AND mediaType = :mediaType AND tmdbId = :tmdbId")
+    suspend fun delete(profileId: Long, mediaType: String, tmdbId: Int)
 }

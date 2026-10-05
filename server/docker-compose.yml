@@ -1,7 +1,6 @@
 # Runs on the Linux box next to the JedFlix stack. Copy this file to
-# ~/jedflix-tv-api/docker-compose.yml once; CI then pulls the SHA it just
-# pushed (`TV_API_TAG=<git sha> docker compose pull api && up -d --no-deps api`)
-# on every main push that touches server/.
+# ~/jedflix-tv-api/docker-compose.yml once; CI refreshes it and pulls both
+# API and recommender images at the SHA it just pushed on server changes.
 #
 # No host port is published. Caddy (in the jedflix compose project) reaches
 # this container as jedflix-tv-api:8080 over the shared jedflix_default network
@@ -22,10 +21,37 @@ services:
     environment:
       ADDR: ":8080"
       CLIP_DIR: /clips
+      RECOMMENDATIONS_URL: http://recommender:8090
     volumes:
       - ${CLIP_HOST_DIR:-/mnt/disk1/jedflix/tv-clips}:/clips:ro
     networks:
       - jedflix
+      - recommendations
+    depends_on:
+      recommender:
+        # Clips and health remain usable while the model warms or is unavailable.
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  recommender:
+    image: ghcr.io/jedborseth/jedflix-tv/recommender:${TV_API_TAG:-latest}
+    container_name: jedflix-tv-recommender
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    environment:
+      TMDB_API_KEY: ${TMDB_API_KEY:?TMDB_API_KEY is required for recommendations}
+      MODEL_THREADS: 2
+      MODEL_CACHE_DIR: /data/models
+      CONTENT_CACHE_DB: /data/content.sqlite3
+    volumes:
+      - ${RECOMMENDATION_HOST_DIR:-/mnt/disk1/jedflix/tv-recommendations}:/data
+    networks:
+      - recommendations
     logging:
       driver: json-file
       options:
@@ -52,6 +78,7 @@ services:
         max-file: "3"
 
 networks:
+  recommendations:
   jedflix:
     external: true
     name: ${JEDFLIX_NETWORK:-jedflix_default}

@@ -4,20 +4,12 @@ name: Home catalog smoke test
 - launchApp:
     clearState: false
 
-# Splash plays ~2s on its own; pressing select skips it so the flow doesn't depend on timing.
-- extendedWaitUntil:
-    visible:
-      id: "splash"
-    timeout: 5000
-    optional: true
-- pressKey: Enter
-
 # Skeleton dismisses once TMDB responds; assert real catalog content is on screen.
 - extendedWaitUntil:
     visible:
       id: "catalog"
     timeout: 30000
-- assertVisible: "Jed's Movies"
+- assertVisible: "Trending Now"
 - assertVisible:
     id: "billboard"
 - assertVisible:
@@ -25,11 +17,25 @@ name: Home catalog smoke test
 - assertNotVisible:
     id: "catalog-skeleton"
 
-# Focus starts on the first editorial shelf. D-pad down reveals the next rails.
-- repeat:
-    while:
-      notVisible: "Crave Movies"
-    times: 6
-    commands:
-      - pressKey: Remote Dpad Down
-- assertVisible: "Crave Movies"
+# Fresh Home starts on Billboard Play. Enter a poster and open Detail.
+- pressKey: Remote Dpad Down
+- pressKey: Enter
+- extendedWaitUntil:
+    visible:
+      id: "detail-play"
+    timeout: 30000
+- assertVisible:
+    id: "detail-like"
+- assertVisible:
+    id: "detail-not-interested"
+- pressKey: Back
+- assertVisible:
+    id: "catalog"
+- pressKey: Remote Dpad Left
+- pressKey: Back
+- assertVisible:
+    id: "catalog"
+# Back on Home with a closed drawer keeps the app open.
+- pressKey: Back
+- assertVisible:
+    id: "catalog"
