@@ -11,7 +11,7 @@ import org.junit.Test
 class DtsLosslessAudioTest {
     @Test
     fun cometConfigDisablesDtsLosslessFetch() {
-        val payload = Json.encodeToString(CometConfigDto.serializer(), cometAddonConfig("key", 5))
+        val payload = Json.encodeToString(CometConfigDto.serializer(), cometAddonConfig("key"))
         val audio = Json.parseToJsonElement(payload)
             .jsonObject
             .getValue("rtnSettings")

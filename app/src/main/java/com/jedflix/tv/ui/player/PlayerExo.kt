@@ -9,7 +9,6 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
-import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -94,17 +93,13 @@ private class DtsAudioRenderersFactory(context: Context) : DefaultRenderersFacto
         enableAudioTrackPlaybackParams: Boolean,
     ): AudioSink {
         val mixer = ChannelMixingAudioProcessor()
-        mixer.putChannelMixingMatrix(ChannelMixingMatrix.createForConstantPower(1, 1))
-        mixer.putChannelMixingMatrix(ChannelMixingMatrix.createForConstantPower(2, 2))
-        for (channels in 3..6) {
-            mixer.putChannelMixingMatrix(ChannelMixingMatrix.createForConstantPower(channels, 2))
-        }
+        stereoMixingMatrices().forEach(mixer::putChannelMixingMatrix)
         val sink = DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
             .setAudioProcessors(arrayOf(mixer))
             .build()
-        // Stereo TV speakers / the emulator cannot play HDMI DTS or 5.1 PCM; mix to 2ch.
+        // Stereo TV speakers / the emulator cannot play HDMI DTS or surround PCM; mix to 2ch.
         return SurroundToStereoAudioSink(sink)
     }
 

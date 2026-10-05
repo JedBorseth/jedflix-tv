@@ -143,6 +143,18 @@ class PlayerViewModel(
         }
 
         override fun onTracksChanged(tracks: Tracks) {
+            // Media3 can play audio alone when every video track exceeds this TV's capabilities.
+            // Empty groups while preparing are normal; only reject a discovered video layout.
+            val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+            if (videoGroups.isNotEmpty() && videoGroups.none { it.isSupported }) {
+                player.pause()
+                onPlayerError(PlaybackException(
+                    "This stream's video format is not supported by this TV",
+                    null,
+                    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+                ))
+                return
+            }
             publishTracks(tracks)
         }
     }
@@ -719,8 +731,7 @@ class PlayerViewModel(
         val options = runCatching {
             comet.fetchStreams(apiKey, MediaType.TV, imdbId, ref.season, ref.episode, nextTitle)
         }.getOrNull() ?: return null
-        val profile = settingsStore.qualityProfile.first()
-        val ranked = AutoStream.ranked(options, profile, MediaType.TV)
+        val ranked = AutoStream.ranked(options)
         val startPositionMs = library.playbackPosition(MediaType.TV, current.tmdbId, ref.season, ref.episode)
         val details = runCatching { tmdb.loadDetails(current.mediaType, current.tmdbId) }.getOrNull()
         val subtitle = NextEpisode.episodeSubtitle(ref.season, ref.episode, nextTitle)

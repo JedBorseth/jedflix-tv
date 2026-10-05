@@ -66,8 +66,7 @@ class StreamPickerViewModel(
         if (current.resolving != null) return
         _state.value = current.copy(resolving = option, resolveError = null)
         resolveJob = viewModelScope.launch {
-            val profile = settingsStore.qualityProfile.first()
-            val ranked = AutoStream.ranked(current.options, profile, mediaType)
+            val ranked = AutoStream.ranked(current.options)
             resolveAndPlay(current, option, AutoStream.afterFailure(ranked, option.id))
         }
     }

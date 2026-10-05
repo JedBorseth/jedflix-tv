@@ -45,8 +45,7 @@ class PlaybackResolver(
             episode,
             episodeTitle,
         )
-        val profile = settingsStore.qualityProfile.first()
-        val ranked = AutoStream.ranked(options, profile, mediaType)
+        val ranked = AutoStream.ranked(options)
         if (ranked.isEmpty()) throw StreamException.NoStreams()
         var lastError: StreamException = StreamException.NoStreams()
         for ((index, option) in ranked.withIndex()) {

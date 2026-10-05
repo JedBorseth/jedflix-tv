@@ -31,14 +31,14 @@
     <string name="settings_rd_qr_new">New QR</string>
     <string name="settings_rd_qr_cd">QR code for entering the Real-Debrid API key from your phone</string>
 
-    <string name="settings_quality_heading">Quality profile</string>
-    <string name="settings_quality_description">Choose stream size and browse extras for this TV.</string>
+    <string name="settings_quality_heading">Browse quality</string>
+    <string name="settings_quality_description">Choose browse image quality and trailer previews. Playback always tries the best available English stream.</string>
     <string name="settings_quality_max">Max</string>
-    <string name="settings_quality_max_description">Blu-ray remuxes up to about 80 GB. Use only on a fast, stable connection.</string>
+    <string name="settings_quality_max_description">Full-resolution browse images and automatic trailer previews.</string>
     <string name="settings_quality_medium">Medium</string>
-    <string name="settings_quality_medium_description">1080p or better, under 30 GB for movies and under 1 GB for shows. Best for typical home internet.</string>
+    <string name="settings_quality_medium_description">Smaller browse images with automatic trailer previews.</string>
     <string name="settings_quality_low">Low</string>
-    <string name="settings_quality_low_description">720p streams. Also turns off extras like autoplay trailers and high-resolution images on the browse screen.</string>
+    <string name="settings_quality_low_description">Smallest browse images. Automatic trailer previews are off.</string>
 
     <string name="settings_about_heading">About</string>
     <string name="settings_version">Version %1$s</string>

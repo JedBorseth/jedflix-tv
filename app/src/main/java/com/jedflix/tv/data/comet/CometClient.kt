@@ -148,7 +148,7 @@ class CometClient(
     }
 
     private fun encodeConfig(apiKey: String): String {
-        val config = cometAddonConfig(apiKey, MAX_RESULTS_PER_RESOLUTION)
+        val config = cometAddonConfig(apiKey)
         val payload = json.encodeToString(CometConfigDto.serializer(), config)
         return Base64.encodeToString(payload.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
@@ -167,7 +167,6 @@ class CometClient(
         const val DEFAULT_BASE_URL = "https://comet.elfhosted.com/"
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) JedFlix/0.1"
-        private const val MAX_RESULTS_PER_RESOLUTION = 5
         private const val MAX_REDIRECTS = 6
         private const val SCRAPE_RETRY_DELAY_MS = 4_000L
         private val REAL_DEBRID_HOST_SUFFIXES = listOf("real-debrid.com", "rdeb.io", "real-debrid.cloud")

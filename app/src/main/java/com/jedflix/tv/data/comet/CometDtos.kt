@@ -30,11 +30,26 @@ data class CometBehaviorHintsDto(
 data class CometConfigDto(
     val debridServices: List<CometDebridServiceDto>,
     val cachedOnly: Boolean,
+    val sortCachedUncachedTogether: Boolean,
     val enableTorrent: Boolean,
     val removeTrash: Boolean,
     val deduplicateStreams: Boolean,
     val maxResultsPerResolution: Int,
+    val maxSize: Long,
+    val languages: CometLanguagesDto,
+    val options: CometOptionsDto,
     val rtnSettings: CometRtnSettingsDto,
+)
+
+@Serializable
+data class CometLanguagesDto(
+    val required: List<String>,
+)
+
+@Serializable
+data class CometOptionsDto(
+    @SerialName("remove_unknown_languages") val removeUnknownLanguages: Boolean,
+    @SerialName("allow_english_in_languages") val allowEnglishInLanguages: Boolean,
 )
 
 @Serializable
@@ -63,13 +78,18 @@ data class CometCustomRankDto(
     val fetch: Boolean,
 )
 
-fun cometAddonConfig(apiKey: String, maxResultsPerResolution: Int): CometConfigDto = CometConfigDto(
+fun cometAddonConfig(apiKey: String): CometConfigDto = CometConfigDto(
     debridServices = listOf(CometDebridServiceDto(service = "realdebrid", apiKey = apiKey)),
     cachedOnly = true,
+    sortCachedUncachedTogether = false,
     enableTorrent = false,
     removeTrash = true,
     deduplicateStreams = true,
-    maxResultsPerResolution = maxResultsPerResolution,
+    // Comet uses zero for unlimited. Leave ranking to Comet and retain every fallback.
+    maxResultsPerResolution = 0,
+    maxSize = 0,
+    languages = CometLanguagesDto(required = listOf("en")),
+    options = CometOptionsDto(removeUnknownLanguages = true, allowEnglishInLanguages = false),
     rtnSettings = CometRtnSettingsDto(
         customRanks = CometCustomRanksDto(
             audio = CometAudioRanksDto(dtsLossless = CometCustomRankDto(fetch = false)),
