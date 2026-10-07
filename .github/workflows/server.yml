@@ -43,7 +43,9 @@ jobs:
 
       - name: Test recommendation policy and ranking
         working-directory: server/recommender
-        run: python3 -m unittest discover -v
+        run: |
+          python3 -m pip install numpy==2.2.6
+          python3 -m unittest discover -v
 
   build:
     needs: test

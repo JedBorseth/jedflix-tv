@@ -65,10 +65,11 @@ Spooky included Hocus Pocus, Monsters, Inc., Hotel Transylvania and Casper.
   release eligibility, broader Discover acquisition, semantic admission,
   whole-page deduplication, background-only encoding, bounded persistence and
   verified finale completion.
-  All 65 policy/model-contract tests passed locally, with two PyTorch-only
-  pooling checks skipped in that environment; those pooling checks separately
-  passed with actual PyTorch. The live service measurements use real CUDA
-  inference and NumPy ranking.
+  All 65 policy/model-contract tests passed in the actual service image with
+  zero skips, including real NumPy ranking and PyTorch pooling. The isolated
+  tests used memory-backed temporary SQLite files; a prior container-overlay
+  SQLite stall did not affect the persisted live catalog on disk1. CI installs
+  the same pinned NumPy so it also exercises production ranking.
 
 Raw server artifacts are under `/mnt/disk1/jedflix/tv-model-benchmarks/`.
 Emulator navigation artifacts are under `/tmp/jedflix-dynamic-release-focus/`.

@@ -295,11 +295,13 @@ class DynamicEngineIntegrationTests(unittest.TestCase):
         metadata = {f'movie-{ident}': title(ident, overview='A Christmas celebration with Santa Claus')
                     for ident in range(1, 13)}
         metadata['movie-999'] = title(999)
-        vectors = {ident: [1.0, 0.0] if int(ident.split('-')[1]) <= strong_count else [0.0, 1.0]
+        strong = [1.0, 0.0] + [0.0] * 6
+        weak = [0.0, 1.0] + [0.0] * 6
+        vectors = {ident: list(strong if int(ident.split('-')[1]) <= strong_count else weak)
                    for ident in metadata}
         self.engine.catalog = SnapshotCatalog(metadata, vectors)
         christmas = next(theme for theme in theme_definitions() if theme.id == 'christmas')
-        self.engine.theme_vectors[christmas.query] = [1.0, 0.0]
+        self.engine.theme_vectors[christmas.query] = list(strong)
         return datetime(2026, 12, 20, 18, tzinfo=timezone.utc)
 
     def test_keyword_eligible_christmas_titles_without_semantic_matches_cannot_fill_a_shelf(self):
