@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -267,25 +268,42 @@ private fun CatalogContent(
         )
     }
 
+    val currentRestoreTarget by rememberUpdatedState(restoreTarget)
+    val currentRows by rememberUpdatedState(catalog.rows)
+    val currentHasBillboard by rememberUpdatedState(hasBillboard)
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        when (val target = restoreTarget) {
+        val restored = when (val target = currentRestoreTarget) {
             RailRestore.CatalogTarget.BillboardPlay -> {
                 listState.scrollToItem(0)
                 withFrameNanos { }
-                runCatching { playFocus.requestFocus() }
+                currentHasBillboard && runCatching { playFocus.requestFocus() }.getOrDefault(false)
             }
             is RailRestore.CatalogTarget.Title -> {
-                val rowIndex = catalog.rows.indexOfFirst { it.id == target.rowId }
+                val rowIndex = currentRows.indexOfFirst { it.id == target.rowId }
                 if (rowIndex > 0) {
                     val pivotPx = (listState.layoutInfo.viewportSize.height * ROW_PIVOT).toInt()
-                    listState.scrollToItem(index = rowIndex + billboardOffset, scrollOffset = -pivotPx)
+                    listState.scrollToItem(index = rowIndex + if (currentHasBillboard) 1 else 0, scrollOffset = -pivotPx)
                     withFrameNanos { }
                 }
-                runCatching { restoredItemFocus.requestFocus() }
+                rowIndex >= 0 && currentRestoreTarget == target && currentRows.any { row ->
+                    row.id == target.rowId && row.items.any { it.key == target.itemKey }
+                } && runCatching { restoredItemFocus.requestFocus() }.getOrDefault(false)
             }
             RailRestore.CatalogTarget.FirstTitle -> {
-                runCatching { if (catalog.rows.isEmpty()) profileFocus.requestFocus() else firstCardFocus.requestFocus() }
+                runCatching { if (currentRows.isEmpty()) profileFocus.requestFocus() else firstCardFocus.requestFocus() }
+                    .getOrDefault(false)
+            }
+        }
+        if (!restored) {
+            // Calendar expiry can remove a saved Shelf during the first frame.
+            // Fall back only when initial restoration failed; active rails keep their focus.
+            focusedRow = 0
+            listState.scrollToItem(0)
+            withFrameNanos { }
+            val billboardFocused = currentHasBillboard && runCatching { playFocus.requestFocus() }.getOrDefault(false)
+            if (!billboardFocused) {
+                runCatching { if (currentRows.isEmpty()) profileFocus.requestFocus() else firstCardFocus.requestFocus() }
             }
         }
     }
