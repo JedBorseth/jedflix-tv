@@ -15,6 +15,9 @@ data class RecommendationWatch(
     val positionMs: Long,
     val durationMs: Long,
     val lastWatchedAt: Long,
+    val season: Int = 0,
+    val episode: Int = 0,
+    val latestWatchedMs: Long = 0,
 )
 
 data class RecommendationTitle(val tmdbId: Int, val mediaType: String)

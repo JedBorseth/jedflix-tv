@@ -5,6 +5,7 @@ import com.jedflix.tv.data.tmdb.CatalogRow
 import com.jedflix.tv.data.tmdb.MediaTitle
 import com.jedflix.tv.data.tmdb.MediaType
 import kotlinx.serialization.Serializable
+import java.time.ZoneId
 
 @Serializable
 data class RecommendationCandidate(
@@ -34,7 +35,8 @@ data class RecommendationCandidate(
 
 @Serializable
 data class WatchSignal(val tmdbId: Int, val mediaType: String, val watchedMs: Long, val positionMs: Long,
-    val durationMs: Long, val lastWatchedAt: Long)
+    val durationMs: Long, val lastWatchedAt: Long, val season: Int = 0, val episode: Int = 0,
+    val latestWatchedMs: Long = 0)
 @Serializable
 data class ListSignal(val tmdbId: Int, val mediaType: String)
 @Serializable
@@ -45,10 +47,11 @@ data class RecommendationRequest(
     val myList: List<ListSignal>,
     val feedback: List<FeedbackSignal>,
     val candidates: List<RecommendationCandidate>,
+    val timeZone: String = ZoneId.systemDefault().id,
 ) {
     companion object {
         fun from(signals: RecommendationSignals, candidates: List<MediaTitle>) = RecommendationRequest(
-            history = signals.history.map { WatchSignal(it.tmdbId, it.mediaType, it.watchedMs, it.positionMs, it.durationMs, it.lastWatchedAt) },
+            history = signals.history.map { WatchSignal(it.tmdbId, it.mediaType, it.watchedMs, it.positionMs, it.durationMs, it.lastWatchedAt, it.season, it.episode, it.latestWatchedMs) },
             myList = signals.myList.map { ListSignal(it.tmdbId, it.mediaType) },
             feedback = signals.feedback.map { FeedbackSignal(it.tmdbId, it.mediaType, it.value, it.updatedAt) },
             candidates = candidates.distinctBy { it.key }.take(300).map(RecommendationCandidate::from),
@@ -58,7 +61,7 @@ data class RecommendationRequest(
 @Serializable
 data class RecommendationShelf(val id: String, val title: String, val items: List<RecommendationCandidate>) {
     fun toRow(): CatalogRow? {
-        if (id != "for-you" && !id.startsWith("because-")) return null
+        if (id != "for-you" && !id.startsWith("because-") && !DynamicShelves.isKnown(id)) return null
         val titles = items.mapNotNull { it.toTitle() }.distinctBy { it.key }.take(40)
         return CatalogRow(id, title.take(180), titles).takeIf { titles.isNotEmpty() }
     }
@@ -70,4 +73,19 @@ data class RecommendationResponse(
     val eligibleKeys: List<String> = emptyList(),
     val evaluatedKeys: List<String> = emptyList(),
     val refreshedAt: Long = 0,
-)
+    val validUntil: Long = 0,
+    val catalogReady: Boolean = true,
+    val modelVersion: String = "",
+) {
+    fun toRows(): List<CatalogRow> {
+        var dynamicCount = 0
+        var becauseCount = 0
+        return shelves.mapNotNull { it.toRow() }.distinctBy { it.id }.filter { row ->
+            when {
+                row.id.startsWith("dynamic-") -> ++dynamicCount <= 5
+                row.id.startsWith("because-") -> ++becauseCount <= 2
+                else -> true
+            }
+        }.take(8)
+    }
+}

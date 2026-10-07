@@ -31,6 +31,33 @@ class RecommendationPersistenceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
+    fun showSignalsAggregateViewingButKeepLatestEpisodeAndProgress() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, JedflixDatabase::class.java).build()
+        try {
+            val profile = database.profileDao().insert(ProfileEntity(name = "Show viewer", avatarKey = "blue", createdAt = 1))
+            val early = WatchProgressEntity(
+                profileId = profile, mediaType = "tv", tmdbId = 123, season = 1, episode = 1,
+                positionMs = 99_000, durationMs = 100_000, lastWatchedAt = 300,
+                title = "Show", overview = "", posterUrl = null, backdropUrl = null, year = "2020",
+                rating = null, genres = "", watchedMs = 70_000,
+            )
+            val latest = early.copy(season = 2, episode = 8, positionMs = 96_000, lastWatchedAt = 900, watchedMs = 85_000)
+            database.watchProgressDao().upsert(latest)
+            database.watchProgressDao().upsert(early) // Insertion order must not select the older episode.
+            val signal = database.watchProgressDao().recommendationHistory(profile, 200).single()
+            assertEquals(155_000L, signal.watchedMs)
+            assertEquals(85_000L, signal.latestWatchedMs)
+            assertEquals(2, signal.season)
+            assertEquals(8, signal.episode)
+            assertEquals(96_000L, signal.positionMs)
+            assertEquals(100_000L, signal.durationMs)
+            assertEquals(900L, signal.lastWatchedAt)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun additiveMigrationPreservesProfilesResumeListsAndSearches() = runBlocking {
         val name = "migration-${UUID.randomUUID()}.db"
         context.getDatabasePath(name).parentFile!!.mkdirs()

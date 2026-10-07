@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from engine import ContentCache, Engine, MODEL, TMDB, validate
 from model import Encoder
+from catalog import CatalogIndex
 
 MAX_BODY = 1024 * 1024
 
@@ -21,11 +22,12 @@ class Service:
 
     def recommend(self, request):
         validate(request)
-        digest = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        version = getattr(getattr(self.engine, 'catalog', None), 'version', 0)
+        digest = hashlib.sha256((str(version) + json.dumps(request, sort_keys=True, separators=(',', ':'))).encode()).hexdigest()
         now = time.time()
         with self.lock:
             entry = self.cache.get(digest)
-        if entry and now - entry[0] < 600:
+        if entry and now - entry[0] < (600 if entry[1].get('catalogReady', True) else 10) and now * 1000 < entry[1].get('validUntil', (now + 600) * 1000):
             return entry[1]
         if not self.gate.acquire(blocking=False):
             raise BlockingIOError('recommendation worker busy')
@@ -60,7 +62,12 @@ def handler(service):
 
         def do_GET(self):
             if self.path == '/health':
-                self.reply(200, {'status': 'ok', 'model': MODEL})
+                catalog = getattr(service.engine, 'catalog', None)
+                self.reply(200, {'status': 'ok', 'model': MODEL,
+                                 'modelVersion': getattr(service.engine, 'model_version', ''),
+                                 'catalogReady': catalog is not None and catalog.ready,
+                                 'catalogTitles': len(catalog.snapshot()[0]) if catalog is not None else 0,
+                                 'catalogVersion': catalog.version if catalog is not None else 0})
             else:
                 self.reply(404, {'error': 'not found'})
 
@@ -94,7 +101,12 @@ def main():
         raise RuntimeError('TMDB_API_KEY is required')
     cache = ContentCache(os.environ.get('CONTENT_CACHE_DB', '/data/content.sqlite3'))
     encoder = Encoder()
-    service = Service(Engine(TMDB(api_key, cache), cache, encoder))
+    tmdb = TMDB(api_key, cache)
+    engine = Engine(tmdb, cache, encoder)
+    engine.warm_themes()
+    engine.catalog = CatalogIndex(tmdb, cache, engine.vectors, fingerprint=engine.model_version)
+    engine.catalog.start()
+    service = Service(engine)
     print(f'recommendation model ready: {MODEL}', flush=True)
     ThreadingHTTPServer(('0.0.0.0', 8090), handler(service)).serve_forever()
 

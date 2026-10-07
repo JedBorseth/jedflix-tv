@@ -42,10 +42,20 @@ services:
     container_name: jedflix-tv-recommender
     restart: unless-stopped
     cpus: 2
-    mem_limit: 2g
+    mem_limit: 6g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
     environment:
       TMDB_API_KEY: ${TMDB_API_KEY:?TMDB_API_KEY is required for recommendations}
       MODEL_THREADS: 2
+      MODEL_BATCH_SIZE: 4
+      MODEL_MAX_TOKENS: 512
+      MODEL_GPU_MEMORY_MIB: 2560
       MODEL_CACHE_DIR: /data/models
       CONTENT_CACHE_DB: /data/content.sqlite3
     volumes:

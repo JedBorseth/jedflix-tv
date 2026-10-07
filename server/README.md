@@ -37,7 +37,7 @@ TMDB_API_KEY=… CLIP_DIR=/tmp/tv-clips go run ./cmd/clipgen --limit 1
 `.github/workflows/server.yml` runs on pushes to `main` that touch `server/`:
 
 1. `go vet` + `go test`
-2. Build and push API and CPU recommender images at `<sha>` and `:latest`
+2. Build and push API and GPU recommender images at `<sha>` and `:latest`
 3. Refresh compose on the server, pin `TV_API_TAG` to that SHA, pull and restart
    both services, and wait for API + real model healthchecks
 
@@ -105,29 +105,46 @@ prefix; no extra Caddy handle is required.
 
 ## Personalized discovery
 
-`POST /recommendations` proxies to a private CPU-only model sidecar. The TV sends
-bounded history summaries, My List, explicit feedback and catalog candidates;
-the server returns `For You` and up to two `Because you watched …` shelves.
-A fresh profile gets release eligibility but no invented personalized shelf.
+`POST /recommendations` proxies to a dedicated NVIDIA GPU sidecar. The TV sends
+bounded viewing signals, My List, feedback, catalog IDs and its IANA timezone.
+The service returns `For You`, up to two `Because you watched …` shelves and up to
+five relevant dynamic shelves. A fresh profile can receive calendar and general
+Show discovery shelves without inventing personal taste. Trending Now still
+owns the Billboard. See [all 27 dynamic shelves](../docs/dynamic-home.md).
 
-The real model is [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5),
-pinned to revision `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a`. Its published ONNX
-export runs with CPUExecutionProvider, two threads, batches of eight, and a
-256-token input limit. CLS pooling and normalization follow the model's documented
-embedding recipe. It does not need PyTorch, a GPU, an inference API, or training
-on users. Several distinct content vectors represent a profile's interests;
-watch-time/completion, recency, My List and likes adjust their weights. Brief
-starts are ignored. Legacy playback position provides weaker evidence until
-actual viewing time accumulates. Dislikes suppress the title and reduce close
-semantic neighbors. MMR-style ranking reduces thematic repetition; every sixth
-For You position can introduce a quality-weighted exploration title.
+The model is [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B),
+pinned to `97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`. It runs FP16 on CUDA with
+SDPA, four documents per batch, at most 512 tokens, 1024 dimensions, final-token
+pooling and L2 normalization. It requires a real GPU and fails startup if model
+loading or real inference fails. The allocator is capped at 2560 MiB, leaving
+headroom for the CUDA context within a roughly 3 GiB total process target.
+The TV service is independent of the unrelated music AI service.
 
-All candidate content is fetched from TMDB (plot, genres, keywords, cast, director).
+A persistent public TMDB catalog warms in the background using paginated Discover
+queries across genres, eras, vote-backed quality, runtime, limited series,
+seasonal keywords and verified credits. The initial target is 3000 Titles
+(`RECOMMENDER_CATALOG_SIZE`, capped at 10000). TMDB requests are paced and honor
+429 Retry-After. Title enrichment and embeddings are never performed by a Home
+request. The HTTP path reads the current in-memory snapshot and scores its
+precomputed vectors on CPU. All 27 theme queries are encoded at startup;
+person shelves reuse their generic query and enforce exact public credit IDs.
+
+Multiple distinct taste anchors represent a profile's interests. Actual viewing
+time, completion, recency, My List and likes adjust their weights. Brief starts
+are ignored; legacy playback position remains weaker evidence. Dislikes suppress
+the Title and reduce close semantic neighbors. Diversity scoring limits thematic
+repetition, with occasional quality-weighted exploration in For You. Completed
+Show triggers require the verified final episode and actual viewing time for
+that episode, not just a seek or a completed earlier episode.
+
 Client descriptions never become persistent cached content or embeddings.
-TMDB recommendations from meaningful recent watches expand the candidate pool.
-Already meaningfully watched titles, My List, and explicit likes/dislikes are excluded from
-personalized discoveries. Shelves reserve separate seed suggestions so For You
-cannot consume the entire Because pool, and returned shelves never repeat titles.
+Meaningfully watched Titles, My List and explicit feedback Titles are excluded
+from discovery. Dynamic shelves reserve their eligible Titles before personal
+shelves are assembled so a small holiday pool cannot disappear into For You.
+All returned discovery shelves are deduplicated. Shelves need at least six
+Titles and are omitted when factual or calendar requirements cannot be met.
+Dynamic Movie shelves require at least 45 minutes of verified runtime. Theme-fit
+admission runs before taste ranking so weak matches cannot pad a Shelf.
 
 ### Release eligibility
 
@@ -156,8 +173,10 @@ Request:
 
 ```json
 {
+  "timeZone": "America/Vancouver",
   "history": [{"tmdbId": 550, "mediaType": "movie", "watchedMs": 6000000,
-    "positionMs": 6000000, "durationMs": 8000000, "lastWatchedAt": 1791158400000}],
+    "positionMs": 6000000, "durationMs": 8000000, "lastWatchedAt": 1791158400000,
+    "season": 0, "episode": 0, "latestWatchedMs": 6000000}],
   "myList": [{"tmdbId": 680, "mediaType": "movie"}],
   "feedback": [{"tmdbId": 13, "mediaType": "movie", "value": "like", "updatedAt": 1791158400000}],
   "candidates": [{"id": 603, "mediaType": "movie", "title": "The Matrix",
@@ -167,29 +186,31 @@ Request:
 ```
 
 Response has `model`, `modelRevision`, `shelves: [{id,title,items}]`, `eligibleKeys`,
-`evaluatedKeys`, `publicReleaseDates`, `completeEligibility`, and `refreshedAt`
+`evaluatedKeys`, `publicReleaseDates`, `completeEligibility`, `refreshedAt`, `validUntil`, `catalogReady`, and `modelVersion`
 (milliseconds UTC). Keys are `movie-550` / `tv-1399`. Shelf items have the same
 candidate shape, enriched from TMDB; `year` is numeric. `publicReleaseDates` maps
 evaluated keys to earliest public dates. Clients must distinguish a failed lookup
 from an authoritative rejection: only `evaluatedKeys - eligibleKeys` are known
-ineligible. Extra response fields support partial eligibility updates.
+ineligible. `validUntil` is the next safe eligibility refresh time (milliseconds UTC).
+`catalogReady=false` also signals missing profile seed embeddings; the TV retries
+while background enrichment catches up. Extra fields support partial updates.
 
-Bodies are capped at 1 MiB; candidates at 300; each signal list at 200. Signals
-beyond those caps should be trimmed on the client by recency. The Go route strips
-unknown fields and only forwards typed content/activity fields, never profile
-names, credentials or device identifiers. One globally active request prevents
-parallel model/corpus warmups; busy returns 429 + Retry-After 30. The proxy gives
-up after 55 seconds; metadata work stops starting new fetches after 35 seconds
-and uses six fetch workers with five-second request timeouts. The TV should
-refresh in the background and retain its previous shelves on errors.
+Bodies are capped at 1 MiB; candidates at 300; each signal list at 200. The Go
+route strips unknown fields and only forwards typed public context/activity,
+never profile names, credentials or device identifiers. One active request
+prevents overlapping page assembly; busy returns 429 + Retry-After 30. The TV
+shows cached Home immediately and refreshes in the background. Failed requests
+retain personal shelves, but expired calendar shelves are removed on the next
+safe Home visit. Network updates cannot reshuffle a focused shelf.
 
-User requests are not persisted or logged. Only public TMDB content (24-hour TTL)
-and vectors keyed by model revision + content hash live in SQLite on disk1.
-Identical requests reuse response hashes/results **in RAM** for ten minutes,
-capped at 32 entries; no names, history, or taste profiles are written to disk.
-The model/cache directory persists across upgrades. The sidecar has no published
-host port and only shares its private compose network with the Go API. Docker
-limits it to two CPUs and 2 GiB, leaving the TV entirely free of inference work.
+Requests and profiles are never persisted or logged. Public TMDB metadata
+(24-hour TTL) and embeddings live in SQLite on disk1. Vector cache identity
+includes model revision, input recipe, dimensions, pooling and precision; BGE
+vectors are rebuilt without touching watch history, profiles or credentials.
+Response hashes/results remain in RAM only, up to 32 entries and ten minutes,
+invalidated by catalog publication and the local eligibility boundary. The
+sidecar has no published production port and shares only the private API network.
+Docker limits it to two CPUs and 6 GiB of host RAM and grants NVIDIA GPU 0.
 
 ### Deploy and verify the model service
 
@@ -205,8 +226,10 @@ The workflow tests Go and Python policy/ranking, builds both images, copies the
 current compose file, and pins both images to the same `TV_API_TAG`. A normal
 `docker compose up -d recommender api` keeps clipgen stopped. API health and clips
 are independent of model readiness; recommendation requests fail gracefully if
-the sidecar is unavailable. First startup downloads the pinned public ONNX model
-and tokenizer (~133 MB model); subsequent starts reuse disk1. Confirm both images
+the sidecar is unavailable. First startup downloads the pinned Qwen model and tokenizer (roughly 1.2 GB
+of model weights); subsequent starts reuse disk1. NVIDIA Container Toolkit and
+enough free VRAM must be available. Background catalog indexing survives
+restarts through the public metadata/vector cache. Confirm both images
 before testing the Android release:
 
 ```bash
@@ -225,14 +248,28 @@ docker stats --no-stream jedflix-tv-recommender
 
 Tests need no API key, downloaded model or GPU: unit tests inject deterministic
 vectors only in test code. Production startup always loads and warms the real
-ONNX model, and refuses to start if the key/model is unavailable:
+Qwen GPU model, and refuses to start if the key/model is unavailable:
 
 ```bash
 cd server/recommender
 python3 -m unittest discover -v
-# Optional actual local model run:
+# Optional actual model run on a CUDA-capable Linux host:
 python3 -m venv /tmp/jedflix-recommender-venv
 /tmp/jedflix-recommender-venv/bin/pip install -r requirements.txt
 TMDB_API_KEY=… MODEL_CACHE_DIR=/tmp/jedflix-models CONTENT_CACHE_DB=/tmp/jedflix-content.sqlite3 \
   /tmp/jedflix-recommender-venv/bin/python service.py
 ```
+
+Run the isolated model benchmark before starting the production GPU service:
+
+```bash
+# This loads a second model: stop ONLY the TV recommender first if it is running.
+docker compose stop recommender
+docker compose run --rm --no-deps --entrypoint python recommender benchmark_model.py
+docker compose up -d recommender
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
+```
+
+Record inference percentiles and total process VRAM separately from PyTorch
+allocator memory. Also measure warm `/recommendations` latency with the real
+public catalog; model-only timing does not cover the whole Home request.

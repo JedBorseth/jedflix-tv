@@ -6,12 +6,12 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 
 ![Home catalog](docs/home.png)![Stream picker](docs/streams.png)
 
-**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.7.0)** · Leanback, API 24+ · sideload only (not on Play Store)
+**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.8.0)** · Leanback, API 24+ · sideload only (not on Play Store)
 
 
 |          |                                                            |
 | -------- | ---------------------------------------------------------- |
-| Browse   | Home / Movies / Shows / Live TV, Trending billboard, deduplicated discovery, For You and Because you watched shelves |
+| Browse   | Home / Movies / Shows / Live TV, Trending billboard, deduplicated discovery, personal recommendations and 27 dynamic shelf themes |
 | Search   | Debounced as you type                                      |
 | Title    | Detail, cast, similar, TV episodes                         |
 | Play     | Best-first English stream selection, Switch stream picker, TV chrome, captions, audio tracks, binge autoplay |
@@ -21,7 +21,7 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 
 The RD key stays in DataStore on the TV. It is sent only to [Comet](https://comet.elfhosted.com) to find/unrestrict streams — never to JedFlix web.
 
-Home recommendations run on the Linux server using a small CPU embedding model. The TV sends a bounded summary of title IDs, viewing progress, actual viewing time, My List, and feedback. Profile names, device IDs, and credentials are excluded. Profiles and recommendation caches remain local; the server persists public title metadata and embeddings, with brief response caching in memory. See [server setup](server/README.md#personalized-discovery).
+Home recommendations use a dedicated Qwen3-Embedding-0.6B GPU service and a broader TMDB catalog indexed in the background. Up to five [dynamic shelves](docs/dynamic-home.md) appear for the local date, time and profile's taste, alongside For You and Because you watched. The TV sends bounded title IDs, viewing progress, actual viewing time, My List, feedback and timezone; profile names, device IDs and credentials are excluded. Profiles and recommendation caches remain local. The server persists public title metadata and embeddings, with brief response caching in memory. See [server setup](server/README.md#personalized-discovery).
 
 Home hides unreleased movies and holds recent theatrical-only movies for 30 days, allowing earlier home releases, Canada-first streaming/rental/purchase availability, or recent successful playback. Metadata availability is an estimate; stream selection still happens on Play.
 
@@ -37,7 +37,7 @@ For older TVs, select **Settings → Browse quality → Low**. It uses smaller i
 ## Install
 
 1. Get a [Real-Debrid](https://real-debrid.com) premium key.
-2. Install the APK (`adb install jedflix-tv-0.7.0.apk`, or copy onto the TV).
+2. Install the APK (`adb install jedflix-tv-0.8.0.apk`, or copy onto the TV).
 3. Settings → paste the key, or **Enter from phone** and scan the QR.
 
 Later releases are offered in Settings (**Check for updates**, then **Download and install**). The app also checks GitHub once every 24 hours. Sideloaded updates only succeed when the new APK is signed with the same key as the installed build.

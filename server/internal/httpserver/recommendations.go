@@ -8,17 +8,21 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	_ "time/tzdata"
 )
 
 const maxRecommendationBody = 1 << 20
 
 type recommendationHistory struct {
-	TMDBID        int    `json:"tmdbId"`
-	MediaType     string `json:"mediaType"`
-	WatchedMS     int64  `json:"watchedMs"`
-	PositionMS    int64  `json:"positionMs"`
-	DurationMS    int64  `json:"durationMs"`
-	LastWatchedAt int64  `json:"lastWatchedAt"`
+	TMDBID          int    `json:"tmdbId"`
+	MediaType       string `json:"mediaType"`
+	WatchedMS       int64  `json:"watchedMs"`
+	PositionMS      int64  `json:"positionMs"`
+	DurationMS      int64  `json:"durationMs"`
+	LastWatchedAt   int64  `json:"lastWatchedAt"`
+	Season          int    `json:"season"`
+	Episode         int    `json:"episode"`
+	LatestWatchedMS int64  `json:"latestWatchedMs"`
 }
 
 type recommendationSignal struct {
@@ -42,6 +46,7 @@ type recommendationCandidate struct {
 }
 
 type recommendationRequest struct {
+	TimeZone   string                    `json:"timeZone"`
 	History    []recommendationHistory   `json:"history"`
 	MyList     []recommendationSignal    `json:"myList"`
 	Feedback   []recommendationSignal    `json:"feedback"`
@@ -53,11 +58,19 @@ func validTitle(id int, kind string) bool {
 }
 
 func (body recommendationRequest) valid() bool {
+	if len(body.TimeZone) > 80 || body.TimeZone == "Local" {
+		return false
+	}
+	if body.TimeZone != "" {
+		if _, err := time.LoadLocation(body.TimeZone); err != nil {
+			return false
+		}
+	}
 	if len(body.Candidates) > 300 || len(body.History) > 200 || len(body.MyList) > 200 || len(body.Feedback) > 200 {
 		return false
 	}
 	for _, row := range body.History {
-		if !validTitle(row.TMDBID, row.MediaType) || row.WatchedMS < 0 || row.PositionMS < 0 || row.DurationMS < 0 || row.LastWatchedAt < 0 {
+		if !validTitle(row.TMDBID, row.MediaType) || row.WatchedMS < 0 || row.LatestWatchedMS < 0 || row.PositionMS < 0 || row.DurationMS < 0 || row.LastWatchedAt < 0 || row.Season < 0 || row.Season > 100000 || row.Episode < 0 || row.Episode > 100000 {
 			return false
 		}
 	}
@@ -107,6 +120,9 @@ func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Candidates == nil {
 		body.Candidates = []recommendationCandidate{}
+	}
+	if body.TimeZone == "" {
+		body.TimeZone = "UTC"
 	}
 	// The public route permits one in-flight request; clips and health remain independent.
 	select {

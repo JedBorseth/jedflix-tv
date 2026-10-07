@@ -19,6 +19,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.File
 import java.io.IOException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -30,13 +33,50 @@ data class CachedRecommendations(
     val receivedAt: Long,
     val signalFingerprint: Int,
     val response: RecommendationResponse,
+    val contextKey: String = "",
 ) {
+    fun contextMatches(now: Long, timeZone: String): Boolean =
+        contextKey == RecommendationContext.key(now, timeZone)
+
+    fun isFresh(now: Long, timeZone: String): Boolean =
+        !legacyModel && contextMatches(now, timeZone) && now - receivedAt in 0 until refreshTtl &&
+            (response.validUntil <= 0 || now < response.validUntil)
+
+    /** Preserve cached taste shelves offline, but never resurrect an expired calendar theme. */
+    fun forDisplay(now: Long, timeZone: String): CachedRecommendations =
+        if (isFresh(now, timeZone)) this else copy(response = response.copy(
+            shelves = response.shelves.filterNot { it.id.startsWith("dynamic-") },
+        ))
+
+    /** Refresh at local eligibility boundaries; failures and warmup retry at a bounded pace. */
+    fun nextRefreshDelay(now: Long, timeZone: String): Long {
+        if (!response.catalogReady || !isFresh(now, timeZone)) return 60_000L
+        val zone = runCatching { ZoneId.of(timeZone) }.getOrElse { ZoneId.of("UTC") }
+        val nextHour = Instant.ofEpochMilli(now).atZone(zone).truncatedTo(ChronoUnit.HOURS)
+            .plusHours(1).toInstant().toEpochMilli()
+        val deadline = minOf(nextHour, receivedAt + refreshTtl,
+            response.validUntil.takeIf { it > 0 } ?: Long.MAX_VALUE)
+        return (deadline - now).coerceAtLeast(1000L)
+    }
+
+    private val refreshTtl: Long get() = if (response.catalogReady) 6 * 60 * 60 * 1000L else 60_000L
+    private val legacyModel: Boolean get() = response.model.startsWith("BAAI/bge-", ignoreCase = true) ||
+        response.model == "bge-small"
     fun verifiedKeys(now: Long): Set<String> =
         if (now - receivedAt in 0..EVIDENCE_TTL_MS) response.eligibleKeys.toSet() else emptySet()
     fun ineligibleKeys(now: Long): Set<String> =
         if (now - receivedAt in 0..EVIDENCE_TTL_MS) response.evaluatedKeys.toSet() - response.eligibleKeys.toSet()
         else emptySet()
     companion object { const val EVIDENCE_TTL_MS = 24 * 60 * 60 * 1000L }
+}
+
+/** Hourly buckets also invalidate legacy caches and cover local midnight/daypart transitions. */
+internal object RecommendationContext {
+    fun key(now: Long, timeZone: String): String {
+        val zone = runCatching { ZoneId.of(timeZone) }.getOrElse { ZoneId.of("UTC") }
+        val local = Instant.ofEpochMilli(now).atZone(zone)
+        return "v2|${zone.id}|${local.toLocalDate()}|${local.hour}|${local.offset}"
+    }
 }
 
 /** Disk/network work stays off the TV's main thread; failures retain each profile's cache. */
@@ -58,8 +98,8 @@ class RecommendationRepository(
         }
     }
 
-    suspend fun cached(profileId: Long): CachedRecommendations? = withContext(Dispatchers.IO) {
-        if (retainedProfileIds?.contains(profileId) == false) null else read(profileId)
+    suspend fun cached(profileId: Long, timeZone: String = ZoneId.systemDefault().id): CachedRecommendations? = withContext(Dispatchers.IO) {
+        if (retainedProfileIds?.contains(profileId) == false) null else read(profileId)?.forDisplay(now(), timeZone)
     }
 
     suspend fun refresh(profileId: Long, request: RecommendationRequest): CachedRecommendations? =
@@ -69,22 +109,24 @@ class RecommendationRepository(
                 val previous = read(profileId)
                 val fingerprint = listOf(request.history, request.myList, request.feedback).hashCode()
                 if (previous != null && previous.signalFingerprint == fingerprint &&
-                    now() - previous.receivedAt in 0 until REFRESH_TTL_MS) return@withLock previous
+                    previous.isFresh(now(), request.timeZone)) return@withLock previous
                 try {
                     val response = fetch(request)
                     currentCoroutineContext().ensureActive()
                     if (retainedProfileIds?.contains(profileId) == false) return@withLock null
-                    val updated = CachedRecommendations(profileId, now(), fingerprint, response)
+                    val receivedAt = now()
+                    val updated = CachedRecommendations(profileId, receivedAt, fingerprint, response,
+                        RecommendationContext.key(receivedAt, request.timeZone))
                     cacheDirectory.mkdirs()
                     val target = file(profileId)
                     val temporary = File(cacheDirectory, "${target.name}.tmp")
                     temporary.writeText(json.encodeToString(CachedRecommendations.serializer(), updated))
                     check(temporary.renameTo(target)) { "Could not persist recommendations" }
-                    updated
+                    updated.forDisplay(receivedAt, request.timeZone)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    previous
+                    previous?.forDisplay(now(), request.timeZone)
                 }
             }
         }
@@ -96,9 +138,8 @@ class RecommendationRepository(
     private fun file(profileId: Long) = File(cacheDirectory, "profile-$profileId.json")
 
     companion object {
-        private const val REFRESH_TTL_MS = 6 * 60 * 60 * 1000L
         fun create(cacheDirectory: File, apiBaseUrl: String): RecommendationRepository {
-            val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+            val json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true }
             // Deliberately separate from TMDB/RD clients: no credentials leave the device.
             val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS).callTimeout(65, TimeUnit.SECONDS).build()

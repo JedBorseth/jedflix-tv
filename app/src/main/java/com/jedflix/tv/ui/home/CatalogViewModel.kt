@@ -27,12 +27,14 @@ import com.jedflix.tv.ui.focus.RailRestore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 
 class CatalogViewModel(
     private val section: CatalogSection,
@@ -125,8 +127,7 @@ class CatalogViewModel(
                                     rows = HomeShelfLayout.arrangeRows(
                                         tmdbState.catalog.rows,
                                         HomeShelfLayout.resolve(config),
-                                        personalized?.cached?.response?.shelves.orEmpty()
-                                            .take(3).mapNotNull { it.toRow() },
+                                        personalized?.cached?.response?.toRows().orEmpty(),
                                     ),
                                 ),
                                 continueWatching,
@@ -183,11 +184,27 @@ class CatalogViewModel(
 
     fun retry() = load(force = true)
 
-    fun onHomeVisible() = refreshRecommendations(force = true)
+    fun onHomeVisible() {
+        // Returning after a calendar/daypart boundary starts from an eligible snapshot.
+        // Network updates during an active browse still wait until Billboard focus.
+        val current = discovery.value
+        val cached = current?.cached
+        if (cached != null) {
+            val display = cached.forDisplay(System.currentTimeMillis(), ZoneId.systemDefault().id)
+            if (display !== cached) {
+                if (focusRowId?.startsWith("dynamic-") == true) clearFocusMemory()
+                discovery.value = current.copy(cached = display)
+                pendingDiscovery = null
+            }
+        }
+        refreshRecommendations(force = true)
+    }
 
     fun onBillboardPlayFocused() {
         focusIdentity = FocusIdentity(null, RailRestore.BILLBOARD_PLAY)
-        pendingDiscovery?.let { discovery.value = it }
+        pendingDiscovery?.let {
+            discovery.value = it.copy(cached = it.cached?.forDisplay(System.currentTimeMillis(), ZoneId.systemDefault().id))
+        }
         pendingDiscovery = null
     }
 
@@ -239,7 +256,7 @@ class CatalogViewModel(
         val client = recommendations ?: return
         val profileId = activeProfileId ?: return
         val catalog = (tmdb.value as? CatalogUiState.Ready)?.catalog ?: return
-        if (lastRefreshProfile == profileId && recommendationJob?.isActive == true) return
+        if (!force && lastRefreshProfile == profileId && recommendationJob?.isActive == true) return
         if (!force && lastRefreshProfile == profileId) return
         lastRefreshProfile = profileId
         recommendationJob?.cancel()
@@ -259,8 +276,16 @@ class CatalogViewModel(
                 .map { "${it.mediaType}-${it.tmdbId}" }.toSet()
             publishDiscovery(DiscoveryState(profileId, cached, dislikes))
             val request = RecommendationRequest.from(signals, catalog.rows.flatMap { it.items })
-            val refreshed = client.refresh(profileId, request)
+            var refreshed = client.refresh(profileId, request)
             if (activeProfileId == profileId) publishDiscovery(DiscoveryState(profileId, refreshed, dislikes))
+            // Refresh independently of D-pad input at each local calendar/daypart boundary.
+            // Background catalog warmup and network failures retry at most once a minute.
+            while (activeProfileId == profileId) {
+                val zone = ZoneId.systemDefault().id
+                delay(refreshed?.nextRefreshDelay(System.currentTimeMillis(), zone) ?: 60_000L)
+                refreshed = client.refresh(profileId, request.copy(timeZone = ZoneId.systemDefault().id))
+                if (activeProfileId == profileId) publishDiscovery(DiscoveryState(profileId, refreshed, dislikes))
+            }
         }
     }
 

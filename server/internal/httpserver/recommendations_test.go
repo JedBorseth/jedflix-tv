@@ -85,3 +85,98 @@ func TestRecommendationsMalformedUpstream(t *testing.T) {
 		}
 	}
 }
+
+func TestRecommendationsForwardsDeviceTimezoneAndLatestEpisodeOnly(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" || r.Header.Get("X-Profile-ID") != "" {
+			t.Error("identity or credential headers reached the recommendation worker")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "secret") {
+			t.Errorf("unrecognized identity/credential fields were forwarded: %s", body)
+		}
+		var decoded recommendationRequest
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.TimeZone != "America/Vancouver" || len(decoded.History) != 1 {
+			t.Fatalf("missing local context: %+v", decoded)
+		}
+		history := decoded.History[0]
+		if history.Season != 2 || history.Episode != 8 || history.PositionMS != 96000 || history.DurationMS != 100000 || history.LatestWatchedMS != 75000 {
+			t.Errorf("latest episode progress changed: %+v", history)
+		}
+		_, _ = w.Write([]byte(`{"model":"Qwen/Qwen3-Embedding-0.6B","shelves":[],"catalogReady":false,"validUntil":123,"modelVersion":"qwen3-v1"}`))
+	}))
+	defer upstream.Close()
+	request := httptest.NewRequest(http.MethodPost, "/recommendations", strings.NewReader(`{
+		"timeZone":"America/Vancouver", "profileId":"secret-profile", "apiKey":"secret-key",
+		"history":[{"tmdbId":123,"mediaType":"tv","season":2,"episode":8,"watchedMs":300000,
+		"positionMs":96000,"durationMs":100000,"latestWatchedMs":75000,"profileName":"secret-name","token":"secret-token"}],
+		"candidates":[{"id":42,"mediaType":"movie","title":"Public title","deviceId":"secret-device"}]
+	}`))
+	request.Header.Set("Authorization", "Bearer secret-token")
+	request.Header.Set("X-Profile-ID", "secret-profile")
+	response := httptest.NewRecorder()
+	New(Config{RecommendationsURL: upstream.URL}).Router().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["catalogReady"] != false || payload["validUntil"] != float64(123) || payload["modelVersion"] != "qwen3-v1" {
+		t.Fatalf("worker freshness metadata was dropped: %v", payload)
+	}
+}
+
+func TestRecommendationsRejectsInvalidDeviceTimezoneOrEpisodeBeforeProxying(t *testing.T) {
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+	router := New(Config{RecommendationsURL: upstream.URL}).Router()
+	bodies := []string{
+		`{"timeZone":"Mars/Unknown"}`, `{"timeZone":"../etc/passwd"}`, `{"timeZone":123}`,
+		`{"timeZone":"` + strings.Repeat("a", 81) + `"}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","season":-1}]}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","episode":100001}]}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","season":true}]}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","episode":1.5}]}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","season":"2"}]}`,
+		`{"history":[{"tmdbId":1,"mediaType":"tv","latestWatchedMs":-1}]}`,
+	}
+	for _, body := range bodies {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/recommendations", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("invalid local context status = %d for %s", response.Code, body)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("%d invalid requests reached the worker", requests)
+	}
+}
+
+func TestRecommendationsLegacyClientsDefaultToUTC(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var decoded recommendationRequest
+		if err := json.NewDecoder(r.Body).Decode(&decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.TimeZone != "UTC" || decoded.History == nil || decoded.Candidates == nil {
+			t.Errorf("legacy defaults missing: %+v", decoded)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer upstream.Close()
+	response := httptest.NewRecorder()
+	New(Config{RecommendationsURL: upstream.URL}).Router().ServeHTTP(response,
+		httptest.NewRequest(http.MethodPost, "/recommendations", strings.NewReader(`{}`)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("legacy client status = %d", response.Code)
+	}
+}

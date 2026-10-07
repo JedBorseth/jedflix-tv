@@ -38,7 +38,8 @@ interface ProfileDao {
 interface WatchProgressDao {
     // SQLite's single MAX aggregate selects position/duration from the latest row.
     @Query("""
-        SELECT tmdbId, mediaType, SUM(watchedMs) AS watchedMs, positionMs, durationMs,
+        SELECT tmdbId, mediaType, SUM(watchedMs) AS watchedMs, watchedMs AS latestWatchedMs,
+               positionMs, durationMs, season, episode,
                MAX(lastWatchedAt) AS lastWatchedAt
         FROM watch_progress WHERE profileId = :profileId
         GROUP BY mediaType, tmdbId ORDER BY lastWatchedAt DESC LIMIT :limit
