@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -106,6 +108,7 @@ fun SearchScreen(
             SearchField(
                 query = query,
                 onQueryChange = viewModel::onQueryChange,
+                onSearchSubmit = viewModel::onSearchSubmit,
                 modifier = Modifier
                     .padding(start = ContentStartPadding, end = ProfileAvatarEndClearance, top = 28.dp, bottom = 16.dp)
                     .focusRequester(fieldFocus),
@@ -138,8 +141,10 @@ fun SearchScreen(
 private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    onSearchSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val keyboard = LocalSoftwareKeyboardController.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -175,6 +180,12 @@ private fun SearchField(
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
                     imeAction = ImeAction.Search,
+                ),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        keyboard?.hide()
+                        onSearchSubmit()
+                    },
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )

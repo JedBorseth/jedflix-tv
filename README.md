@@ -6,7 +6,7 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 
 ![Home catalog](docs/home.png)![Stream picker](docs/streams.png)
 
-**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.8.0)** · Leanback, API 24+ · sideload only (not on Play Store)
+**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.8.1)** · Leanback, API 24+ · sideload only (not on Play Store)
 
 
 |          |                                                            |
@@ -37,7 +37,7 @@ For older TVs, select **Settings → Browse quality → Low**. It uses smaller i
 ## Install
 
 1. Get a [Real-Debrid](https://real-debrid.com) premium key.
-2. Install the APK (`adb install jedflix-tv-0.8.0.apk`, or copy onto the TV).
+2. Install the APK (`adb install jedflix-tv-0.8.1.apk`, or copy onto the TV).
 3. Settings → paste the key, or **Enter from phone** and scan the QR.
 
 Later releases are offered in Settings (**Check for updates**, then **Download and install**). The app also checks GitHub once every 24 hours. Sideloaded updates only succeed when the new APK is signed with the same key as the installed build.

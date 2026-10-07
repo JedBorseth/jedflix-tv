@@ -53,7 +53,6 @@ class SearchViewModel(
                     _results.value = SearchUiState.Loading
                     try {
                         val hits = repository.search(q)
-                        library.saveSearchQuery(q)
                         _results.value = if (hits.isEmpty()) {
                             SearchUiState.Empty
                         } else {
@@ -72,6 +71,12 @@ class SearchViewModel(
 
     fun onQueryChange(value: String) {
         _query.value = value
+    }
+
+    fun onSearchSubmit() {
+        val q = _query.value.trim()
+        if (q.isEmpty()) return
+        viewModelScope.launch { library.saveSearchQuery(q) }
     }
 
     class Factory(

@@ -50,7 +50,6 @@ import com.jedflix.tv.ui.search.SearchScreen
 import com.jedflix.tv.ui.settings.SettingsScreen
 import com.jedflix.tv.ui.settings.UpdatePromptOverlay
 import com.jedflix.tv.ui.splash.SplashScreen
-import com.jedflix.tv.ui.splash.SplashStingEffect
 import com.jedflix.tv.ui.streams.PlaybackStartErrorOverlay
 import com.jedflix.tv.ui.streams.PlaybackStartingOverlay
 import com.jedflix.tv.ui.streams.StreamPickerScreen
@@ -244,7 +243,6 @@ fun JedflixNavHost(
     val showPrompt = updateState.showLaunchPrompt && updateState.available != null && !hidePrompt
 
     CompositionLocalProvider(LocalBrowseQuality provides browseQuality) {
-        SplashStingEffect()
         Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
