@@ -85,6 +85,14 @@
     <string name="search_recent">Recently searched</string>
     <string name="search_empty">No titles matched that search.</string>
     <string name="search_error">Couldn\'t search titles</string>
+    <string name="prompt_silly">Silly movies for me</string>
+    <string name="prompt_comfort">Comfort movies</string>
+    <string name="prompt_twists">Twisty thrillers</string>
+    <string name="prompt_gems">Hidden gems for me</string>
+    <string name="prompt_binge">A show to binge</string>
+    <string name="prompt_custom">Find picks for my search</string>
+    <string name="discovery_error">Couldn\'t find picks right now. Try again shortly.</string>
+    <string name="discovery_limited">More picks will be available later. You can still search by title.</string>
 
     <string name="profile_cd">Profile %1$s</string>
     <string name="profile_who">Who\'s watching?</string>

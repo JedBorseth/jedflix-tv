@@ -42,21 +42,12 @@ services:
     container_name: jedflix-tv-recommender
     restart: unless-stopped
     cpus: 2
-    mem_limit: 6g
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
+    mem_limit: 512m
     environment:
       TMDB_API_KEY: ${TMDB_API_KEY:?TMDB_API_KEY is required for recommendations}
-      MODEL_THREADS: 2
-      MODEL_BATCH_SIZE: 4
-      MODEL_MAX_TOKENS: 512
-      MODEL_GPU_MEMORY_MIB: 2560
-      MODEL_CACHE_DIR: /data/models
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required for recommendations}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}
+      HOME_TIME_ZONE: America/Vancouver
       CONTENT_CACHE_DB: /data/content.sqlite3
     volumes:
       - ${RECOMMENDATION_HOST_DIR:-/mnt/disk1/jedflix/tv-recommendations}:/data

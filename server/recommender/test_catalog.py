@@ -44,43 +44,28 @@ class TMDB:
 class CatalogTests(unittest.TestCase):
     def setUp(self):
         self.cache, self.tmdb = Cache(), TMDB()
-        self.encoded = []
+        self.index = CatalogIndex(self.tmdb, self.cache, request_interval=0)
 
-        def encode(values):
-            self.encoded.append(list(values))
-            return {ident: [0.6, 0.8] for ident in values}
-
-        self.encode = encode
-        self.index = CatalogIndex(self.tmdb, self.cache, encode, fingerprint='model-a', request_interval=0)
-
-    def test_snapshot_has_no_network_or_gpu_work_and_is_independent_of_profile(self):
+    def test_snapshot_has_no_network_or_model_work_and_is_independent_of_profile(self):
         self.index.request({'movie-42': {'id': 42, 'mediaType': 'movie', 'watchedMs': 999}})
         self.assertEqual(self.tmdb.calls, [])
-        self.assertEqual(self.encoded, [])
         self.index.refresh_once()
-        calls, jobs = list(self.tmdb.calls), list(self.encoded)
-        metadata, vectors = self.index.snapshot()
+        calls = list(self.tmdb.calls)
+        metadata = self.index.snapshot()
         metadata.pop('movie-42')
-        vectors.clear()
-        self.assertIn('movie-42', self.index.snapshot()[0])
+        self.assertIn('movie-42', self.index.snapshot())
         self.assertEqual(self.tmdb.calls, calls)
-        self.assertEqual(self.encoded, jobs)
         stored = repr(self.cache.values)
         self.assertNotIn('watchedMs', stored)
         self.assertNotIn('999', stored)
 
-    def test_persistent_public_snapshot_restores_vectors_only_for_same_model(self):
+    def test_persistent_public_snapshot_restores_without_a_model(self):
         self.index.request({'movie-42': {'id': 42, 'mediaType': 'movie'}})
         self.index.refresh_once()
-        same = CatalogIndex(self.tmdb, self.cache, self.encode, fingerprint='model-a', request_interval=0)
-        self.assertIn('movie-42', same.snapshot()[1])
-        different = CatalogIndex(self.tmdb, self.cache, self.encode, fingerprint='model-b', request_interval=0)
-        self.assertIn('movie-42', different.snapshot()[0])
-        self.assertEqual(different.snapshot()[1], {})
-        call_count = len(self.tmdb.calls)
-        different.refresh_once()
-        self.assertEqual(len(self.tmdb.calls), call_count)
-        self.assertIn('movie-42', different.snapshot()[1])
+        restored = CatalogIndex(self.tmdb, self.cache, request_interval=0)
+        self.assertEqual(self.index.snapshot(), restored.snapshot())
+        self.assertIn('movie-42', restored.snapshot())
+        self.assertTrue(all(table == 'content' for table, _ in self.cache.values))
 
     def test_profile_references_take_priority_over_background_discovery(self):
         self.index.refresh_once()  # Trending puts public IDs in the queue.
@@ -88,9 +73,16 @@ class CatalogTests(unittest.TestCase):
         self.index.refresh_once()
         details = [row for row in self.tmdb.calls if row[0] == 'detail']
         self.assertEqual(details[0], ('detail', 'tv', 90))
-        self.assertIn('movie-1', self.index.snapshot()[0])
-        self.assertIn('tv-2', self.index.snapshot()[0])
-        self.assertNotIn('person-3', self.index.snapshot()[0])
+        self.assertIn('movie-1', self.index.snapshot())
+        self.assertIn('tv-2', self.index.snapshot())
+        self.assertNotIn('person-3', self.index.snapshot())
+
+    def test_prompt_expansion_queues_public_enrichment_without_blocking_on_details(self):
+        self.index.expand_prompt('silly movies for me')
+        self.assertTrue(self.index._wake.is_set())
+        self.assertIn('movie-100', self.index._pending)
+        self.assertFalse(any(row[0] == 'detail' for row in self.tmdb.calls))
+        self.assertTrue(all(query.get('timeout') == 2 for _, query in self.tmdb.calls))
 
     def test_background_queries_cover_genres_eras_short_movies_and_limited_series(self):
         templates = self.index._recipe_templates
@@ -120,7 +112,7 @@ class CatalogTests(unittest.TestCase):
         self.index.refresh_once()
         details = [row for row in self.tmdb.calls if row[0] == 'detail']
         self.assertEqual(len(details), 2)
-        self.assertTrue(self.index._fresh(self.index.snapshot()[0]['movie-42']))
+        self.assertTrue(self.index._fresh(self.index.snapshot()['movie-42']))
 
     def test_rate_limit_retry_after_is_honored_without_home_lock(self):
         waits = []
@@ -149,13 +141,13 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(waits, [7])
         self.assertEqual(len(attempts), 2)
 
-    def test_gpu_work_is_batched_and_version_changes_only_on_publish(self):
+    def test_enrichment_is_batched_and_version_changes_only_on_publish(self):
         refs = {f'movie-{ident}': {'id': ident, 'mediaType': 'movie'} for ident in range(1, 20)}
         initial = self.index.version
         self.index.request(refs)
         self.assertEqual(self.index.version, initial)
         self.index.refresh_once()
-        self.assertEqual(len(self.encoded[0]), 8)
+        self.assertEqual(len([row for row in self.tmdb.calls if row[0] == 'detail']), 8)
         self.assertGreater(self.index.version, initial)
 
     def test_full_background_queue_cannot_block_a_new_profile_reference(self):
@@ -174,44 +166,27 @@ class CatalogTests(unittest.TestCase):
         early_keywords = [query['query'] for path, query, _ in self.index._recipe_templates[2:5]]
         self.assertEqual(set(early_keywords), {'christmas', 'winter', 'snow'})
         self.assertTrue(self.index._refresh_plan)
-        oversized = CatalogIndex(self.tmdb, self.cache, self.encode, target=999_999)
+        oversized = CatalogIndex(self.tmdb, self.cache, target=999_999)
         self.assertEqual(oversized.target, 10_000)
 
-    def test_structured_metadata_refresh_overwrites_one_public_vector_record(self):
+    def test_structured_metadata_refresh_overwrites_one_public_record(self):
         self.index.request({'movie-42': {'id': 42, 'mediaType': 'movie'}})
         self.index.refresh_once()
-        metadata = deepcopy(self.index.snapshot()[0]['movie-42'])
-        metadata.update(popularity=55, vote_average=8,
-                        **{'watch/providers': {'results': {'CA': {'rent': [{'provider_id': 1}]}}}})
-        before = [ident for table, ident in self.cache.values if table == 'vectors']
+        metadata = deepcopy(self.index.snapshot()['movie-42'])
+        metadata.update(popularity=55, overview='An updated public description')
         self.index._publish({'movie-42': metadata})
-        after = [ident for table, ident in self.cache.values if table == 'vectors']
-        self.assertEqual(before, after)
-        self.assertEqual(len(after), 1)
-
-    def test_crash_window_reuses_unchanged_documents_and_rebuilds_changed_documents(self):
-        self.index.request({'movie-42': {'id': 42, 'mediaType': 'movie'}})
-        self.index.refresh_once()
-        metadata = self.cache.get('content', 'catalog:v3:metadata:movie-42')
-        metadata['popularity'] = 50  # Simulate a crash between metadata and vector persistence.
-        self.cache.put('content', 'catalog:v3:metadata:movie-42', metadata)
-        same_text = CatalogIndex(self.tmdb, self.cache, self.encode, fingerprint='model-a')
-        self.assertIn('movie-42', same_text.snapshot()[1])
-        metadata['overview'] = 'A completely new semantic description.'
-        self.cache.put('content', 'catalog:v3:metadata:movie-42', metadata)
-        changed_text = CatalogIndex(self.tmdb, self.cache, self.encode, fingerprint='model-a', request_interval=0)
-        self.assertNotIn('movie-42', changed_text.snapshot()[1])
-        changed_text.refresh_once()
-        self.assertIn('movie-42', changed_text.snapshot()[1])
+        restored = CatalogIndex(self.tmdb, self.cache, request_interval=0)
+        self.assertEqual(restored.snapshot()['movie-42']['overview'], 'An updated public description')
+        self.assertEqual(len([ident for table, ident in self.cache.values if ident.startswith('catalog:v3:metadata:')]), 1)
 
     def test_fifo_eviction_cleans_persistent_index_and_protects_same_batch_refresh(self):
         self.index._max_entries = 2
         self.index._publish({'movie-1': {'id': 1, 'title': 'One'}, 'movie-2': {'id': 2, 'title': 'Two'}})
         self.index._publish({'movie-1': {'id': 1, 'title': 'One refreshed'}, 'movie-3': {'id': 3, 'title': 'Three'}})
-        self.assertEqual(set(self.index.snapshot()[0]), {'movie-1', 'movie-3'})
+        self.assertEqual(set(self.index.snapshot()), {'movie-1', 'movie-3'})
         self.assertIsNone(self.cache.get('content', 'catalog:v3:metadata:movie-2'))
         indexed = [ident for table, ident in self.cache.values if table == 'vectors']
-        self.assertEqual(len(indexed), 2)
+        self.assertEqual(indexed, [])
 
 
 if __name__ == '__main__':

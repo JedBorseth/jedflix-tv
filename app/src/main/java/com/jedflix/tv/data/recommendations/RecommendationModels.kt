@@ -48,6 +48,8 @@ data class RecommendationRequest(
     val feedback: List<FeedbackSignal>,
     val candidates: List<RecommendationCandidate>,
     val timeZone: String = ZoneId.systemDefault().id,
+    val cacheToken: String = "",
+    val prompt: String = "",
 ) {
     companion object {
         fun from(signals: RecommendationSignals, candidates: List<MediaTitle>) = RecommendationRequest(
@@ -57,6 +59,15 @@ data class RecommendationRequest(
             candidates = candidates.distinctBy { it.key }.take(300).map(RecommendationCandidate::from),
         )
     }
+}
+
+@Serializable
+data class DiscoveryResponse(
+    val model: String = "",
+    val prompt: String = "",
+    val items: List<RecommendationCandidate> = emptyList(),
+) {
+    fun toTitles(): List<MediaTitle> = items.mapNotNull { it.toTitle() }.distinctBy { it.key }.take(30)
 }
 @Serializable
 data class RecommendationShelf(val id: String, val title: String, val items: List<RecommendationCandidate>) {
@@ -73,6 +84,7 @@ data class RecommendationResponse(
     val eligibleKeys: List<String> = emptyList(),
     val evaluatedKeys: List<String> = emptyList(),
     val refreshedAt: Long = 0,
+    val generatedAt: Long = 0,
     val validUntil: Long = 0,
     val catalogReady: Boolean = true,
     val modelVersion: String = "",

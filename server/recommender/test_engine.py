@@ -1,12 +1,8 @@
 import json
-import math
-import tempfile
 import unittest
 from datetime import date, datetime, timezone
 
-from engine import (ContentCache, Engine, MAX_CANDIDATES, candidate, diverse_rank,
-                    key, release_policy, signals, validate)
-from service import Service
+from engine import release_policy, signals, validate
 
 TODAY = date(2026, 10, 5)
 NOW = datetime(2026, 10, 5, tzinfo=timezone.utc)
@@ -94,115 +90,3 @@ class SignalsTests(unittest.TestCase):
         seeds, excluded, dislikes = signals(request, 100)
         self.assertEqual(seeds, [])
         self.assertIn('movie-1', excluded & dislikes)
-
-
-class RankingTests(unittest.TestCase):
-    def test_like_only_recommends_new_neighbors_instead_of_the_seed(self):
-        class TMDBFake:
-            def detail(self, kind, ident):
-                return {'id': ident, 'title': f'Movie {ident}', 'overview': 'Space adventure',
-                        'poster_path': '/poster.jpg', 'release_date': '2020-01-01'}
-            def recommendations(self, *_):
-                return []
-        request = {'feedback': [{'tmdbId': 1, 'mediaType': 'movie', 'value': 'like'}],
-                   'candidates': [{'id': ident, 'mediaType': 'movie'} for ident in (1, 2, 3)]}
-        with tempfile.TemporaryDirectory() as directory:
-            cache = ContentCache(directory + '/cache.sqlite3')
-            self.addCleanup(cache.db.close)
-            result = Engine(TMDBFake(), cache, lambda texts: [[1, 0] for _ in texts]).recommend(request, NOW)
-        self.assertEqual(result['shelves'][0]['id'], 'for-you')
-        self.assertEqual({item['id'] for item in result['shelves'][0]['items']}, {2, 3})
-
-    def test_recent_actual_stream_overrides_theatre_holdback_but_not_future(self):
-        class TMDBFake:
-            def detail(self, kind, ident):
-                metadata = movie([('US', 3, '2026-11-01' if ident == 2 else '2026-10-01')])
-                return {**metadata, 'id': ident, 'title': 'Movie', 'overview': 'Plot', 'poster_path': '/poster.jpg'}
-            def recommendations(self, *_):
-                return []
-        timestamp = int(NOW.timestamp() * 1000)
-        request = {'history': [
-            {'tmdbId': 1, 'mediaType': 'movie', 'watchedMs': 10_000, 'lastWatchedAt': timestamp},
-            {'tmdbId': 2, 'mediaType': 'movie', 'watchedMs': 10_000, 'lastWatchedAt': timestamp},
-            {'tmdbId': 3, 'mediaType': 'movie', 'positionMs': 2_000_000, 'lastWatchedAt': timestamp},
-            {'tmdbId': 4, 'mediaType': 'movie', 'watchedMs': 10_000, 'lastWatchedAt': timestamp - 8 * 86_400_000}],
-            'candidates': [{'id': ident, 'mediaType': 'movie'} for ident in range(1, 5)]}
-        with tempfile.TemporaryDirectory() as directory:
-            cache = ContentCache(directory + '/cache.sqlite3')
-            self.addCleanup(cache.db.close)
-            result = Engine(TMDBFake(), cache, lambda texts: [[1, 0] for _ in texts]).recommend(request, NOW)
-        self.assertEqual(result['eligibleKeys'], ['movie-1'])
-        self.assertEqual(set(result['evaluatedKeys']), {'movie-1', 'movie-2', 'movie-3', 'movie-4'})
-
-    def test_diversification_penalizes_duplicates_in_theme(self):
-        vectors = {'a': [1, 0], 'b': [1, 0], 'c': [0, 1]}
-        self.assertEqual(diverse_rank(vectors, {'a': 1, 'b': 0.99, 'c': 0.9}, vectors, 2), ['a', 'c'])
-
-    def test_request_bounds_and_types(self):
-        with self.assertRaises(ValueError):
-            validate({'candidates': [{'id': 1, 'mediaType': 'movie'}] * (MAX_CANDIDATES + 1)})
-        for ident in (-1, True, '1'):
-            with self.assertRaises(ValueError):
-                validate({'myList': [{'tmdbId': ident, 'mediaType': 'movie'}]})
-
-    def test_real_pipeline_filters_dedups_caches_and_learns(self):
-        class TMDBFake:
-            def detail(self, kind, ident):
-                if ident == 90:
-                    raise RuntimeError('unavailable')
-                return {'id': ident, 'title': f'Movie {ident}', 'overview': 'Space exploration' if ident % 2 else 'Family comedy',
-                        'genres': [{'name': 'Science Fiction' if ident % 2 else 'Comedy'}], 'poster_path': '/poster.jpg',
-                        'release_date': '2027-01-01' if ident == 91 else '2020-01-01', 'vote_average': 7}
-            def recommendations(self, *_):
-                return [{'id': ident} for ident in range(40, 60)]
-        encoded_count = [0]
-        def fake_encoder(descriptions):
-            encoded_count[0] += len(descriptions)
-            return [[1, 0] if 'Space exploration' in description else [0, 1] for description in descriptions]
-        with tempfile.TemporaryDirectory() as directory:
-            cache = ContentCache(directory + '/content.sqlite3')
-            self.addCleanup(cache.db.close)
-            engine = Engine(TMDBFake(), cache, fake_encoder)
-            request = {'history': [{'tmdbId': 1, 'mediaType': 'movie', 'watchedMs': 3_600_000, 'positionMs': 3_600_000}],
-                       'feedback': [{'tmdbId': 3, 'mediaType': 'movie', 'value': 'dislike'}],
-                       'candidates': [{'id': ident, 'mediaType': 'movie', 'title': 'Untrusted text'} for ident in range(2, 92)]}
-            result = engine.recommend(request, NOW)
-            titles = [item for shelf in result['shelves'] for item in shelf['items']]
-            keys = [key(item) for item in titles]
-            self.assertEqual(len(keys), len(set(keys)))
-            self.assertNotIn('movie-1', keys)
-            self.assertNotIn('movie-3', keys)
-            self.assertNotIn('movie-90', result['evaluatedKeys'])
-            self.assertIn('movie-91', result['evaluatedKeys'])
-            self.assertNotIn('movie-91', result['eligibleKeys'])
-            self.assertFalse(result['completeEligibility'])
-            self.assertEqual(result['shelves'][0]['id'], 'for-you')
-            self.assertTrue(any(shelf['id'] == 'because-movie-1' for shelf in result['shelves']))
-            self.assertTrue(all(item['title'].startswith('Movie ') for item in titles))
-            count = encoded_count[0]
-            self.assertEqual(engine.recommend(request, NOW), result)
-            self.assertEqual(encoded_count[0], count)
-            # Persistent rows only contain fetched content and vectors, never history.
-            for row in cache.db.execute('SELECT data FROM vectors'):
-                self.assertIsInstance(json.loads(row[0]), list)
-
-    def test_busy_gate_and_response_cache(self):
-        class Fake:
-            calls = 0
-            def recommend(self, request):
-                self.calls += 1
-                return {'shelves': []}
-        engine = Fake()
-        service = Service(engine)
-        self.assertEqual(service.recommend({}), service.recommend({}))
-        self.assertEqual(engine.calls, 1)
-        service.gate.acquire()
-        try:
-            with self.assertRaises(BlockingIOError):
-                service.recommend({'candidates': [{'id': 1, 'mediaType': 'movie'}]})
-        finally:
-            service.gate.release()
-
-
-if __name__ == '__main__':
-    unittest.main()

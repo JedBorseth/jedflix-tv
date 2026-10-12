@@ -169,18 +169,18 @@ class RecommendationRepositoryTest {
         assertTrue(repo.refresh(1, request().copy(timeZone = "America/Vancouver"))!!.response.shelves.isEmpty())
     }
 
-    @Test fun oldBgeServerCacheRefreshesImmediatelyAfterQwenDeploymentWithinTheSameHour() = runTest {
+    @Test fun oldEmbeddingCacheRefreshesImmediatelyAfterOpenRouterDeploymentWithinTheSameHour() = runTest {
         var requests = 0
         val movie = RecommendationCandidate(123, "movie", "Movie", posterUrl = "poster")
         val repo = RecommendationRepository(directory.root, {
             requests++
-            RecommendationResponse(model = if (requests == 1) "BAAI/bge-small-en-v1.5" else "Qwen/Qwen3-Embedding-0.6B",
+            RecommendationResponse(model = if (requests == 1) "Qwen/Qwen3-Embedding-0.6B" else "nvidia/nemotron-3-super-120b-a12b:free",
                 shelves = listOf(RecommendationShelf("for-you", "For You", listOf(movie))))
         }, { 1000 })
         repo.refresh(1, request())
-        assertEquals("BAAI/bge-small-en-v1.5", repo.cached(1)?.response?.model)
+        assertEquals("Qwen/Qwen3-Embedding-0.6B", repo.cached(1)?.response?.model)
         assertEquals("for-you", repo.cached(1)?.response?.shelves?.single()?.id)
-        assertEquals("Qwen/Qwen3-Embedding-0.6B", repo.refresh(1, request())?.response?.model)
+        assertEquals("nvidia/nemotron-3-super-120b-a12b:free", repo.refresh(1, request())?.response?.model)
         assertEquals(2, requests)
         repo.refresh(1, request())
         assertEquals(2, requests)
@@ -189,7 +189,7 @@ class RecommendationRepositoryTest {
     @Test fun refreshTimerTargetsDaypartAndMidnightBoundariesWithBoundedOfflineRetries() {
         val zone = "America/Vancouver"
         val friday = Instant.parse("2026-10-09T23:59:00Z").toEpochMilli()
-        val cache = CachedRecommendations(1, friday, 0, response("Qwen/Qwen3-Embedding-0.6B"),
+        val cache = CachedRecommendations(1, friday, 0, response("nvidia/nemotron-3-super-120b-a12b:free"),
             RecommendationContext.key(friday, zone))
         assertEquals(60_000L, cache.nextRefreshDelay(friday, zone)) // Local17:00.
         val halloween = Instant.parse("2026-11-01T06:59:00Z").toEpochMilli()
@@ -210,5 +210,41 @@ class RecommendationRepositoryTest {
             RecommendationContext.key(beforeFallback, zone))
         assertEquals(60_000L, cache.nextRefreshDelay(beforeFallback, zone))
         assertFalse(cache.contextMatches(beforeFallback + 60_000, zone))
+    }
+
+    @Test fun serverCacheTokenSurvivesProgressChangesRestartAndIsDifferentPerProfile() = runTest {
+        val tokens = mutableListOf<String>()
+        val fetch: suspend (RecommendationRequest) -> RecommendationResponse = {
+            tokens += it.cacheToken
+            response("remote")
+        }
+        val repo = RecommendationRepository(directory.root, fetch, { 1000 })
+        repo.refresh(1, request())
+        repo.refresh(1, request(2000))
+        RecommendationRepository(directory.root, fetch, { 2000 }).refresh(1, request(3000))
+        repo.refresh(2, request())
+        assertTrue(tokens.first().isNotBlank())
+        assertEquals(tokens[0], tokens[1])
+        assertEquals(tokens[0], tokens[2])
+        assertNotEquals(tokens[0], tokens[3])
+        repo.retainProfiles(setOf(2))
+        assertFalse(File(directory.root, "profile-1.key").exists())
+    }
+
+    @Test fun promptDiscoveryMakesFreshRequestsWithoutChangingHomeCache() = runTest {
+        var calls = 0
+        val repo = RecommendationRepository(directory.root, { response("home") }, { 1000 },
+            fetchDiscovery = {
+                calls++
+                assertEquals("silly movies for me", it.prompt)
+                assertEquals("", it.cacheToken)
+                DiscoveryResponse(prompt = it.prompt)
+            })
+        repo.refresh(1, request())
+        val before = File(directory.root, "profile-1.json").readText()
+        repo.discover(request(), "silly movies for me")
+        repo.discover(request(), "silly movies for me")
+        assertEquals(2, calls)
+        assertEquals(before, File(directory.root, "profile-1.json").readText())
     }
 }

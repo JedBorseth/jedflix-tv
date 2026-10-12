@@ -5,11 +5,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.jedflix.tv.data.library.UserLibraryRepository
+import com.jedflix.tv.data.recommendations.DiscoveryException
+import com.jedflix.tv.data.recommendations.RecommendationRepository
+import com.jedflix.tv.data.recommendations.RecommendationRequest
 import com.jedflix.tv.data.tmdb.MissingTmdbKeyException
 import com.jedflix.tv.data.tmdb.TmdbRepository
 import com.jedflix.tv.ui.home.ErrorKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +30,18 @@ import kotlinx.coroutines.launch
 class SearchViewModel(
     private val repository: TmdbRepository,
     private val library: UserLibraryRepository,
+    private val recommendations: RecommendationRepository? = null,
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
+    private val _prompt = MutableStateFlow<String?>(null)
+    val prompt: StateFlow<String?> = _prompt.asStateFlow()
+    private var discoveryJob: Job? = null
+    var selectedTitleKey: String? = null
+        private set
+
+    fun rememberSelectedTitle(key: String) { selectedTitleKey = key }
 
     private val _results = MutableStateFlow<SearchUiState>(SearchUiState.Idle())
     val recents: StateFlow<List<String>> = library.observeRecentSearches()
@@ -41,11 +53,11 @@ class SearchViewModel(
 
     init {
         viewModelScope.launch {
-            _query
-                .map { it.trim() }
+            combine(_query, _prompt) { query, prompt -> query.trim() to prompt }
                 .debounce(DEBOUNCE_MS)
                 .distinctUntilChanged()
-                .collectLatest { q ->
+                .collectLatest { (q, selectedPrompt) ->
+                    if (selectedPrompt != null) return@collectLatest
                     if (q.isEmpty()) {
                         _results.value = SearchUiState.Idle()
                         return@collectLatest
@@ -53,6 +65,7 @@ class SearchViewModel(
                     _results.value = SearchUiState.Loading
                     try {
                         val hits = repository.search(q)
+                        if (_prompt.value != null) return@collectLatest
                         _results.value = if (hits.isEmpty()) {
                             SearchUiState.Empty
                         } else {
@@ -61,16 +74,63 @@ class SearchViewModel(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: MissingTmdbKeyException) {
-                        _results.value = SearchUiState.Error(ErrorKind.MISSING_KEY)
+                        if (_prompt.value == null) _results.value = SearchUiState.Error(ErrorKind.MISSING_KEY)
                     } catch (e: Exception) {
-                        _results.value = SearchUiState.Error(ErrorKind.NETWORK)
+                        if (_prompt.value == null) _results.value = SearchUiState.Error(ErrorKind.NETWORK)
                     }
                 }
+        }
+        viewModelScope.launch {
+            var previous: Long? = null
+            library.observeActiveProfile().collect { profile ->
+                val id = profile?.id
+                if (previous != null && previous != id && _prompt.value != null) {
+                    selectedTitleKey = null
+                    discoveryJob?.cancel()
+                    _prompt.value = null
+                    _results.value = SearchUiState.Idle()
+                }
+                previous = id
+            }
         }
     }
 
     fun onQueryChange(value: String) {
+        selectedTitleKey = null
+        discoveryJob?.cancel()
+        _prompt.value = null
         _query.value = value
+    }
+
+    fun discover(value: String) {
+        val client = recommendations ?: return
+        val text = value.trim().take(500)
+        if (text.isEmpty() || discoveryJob?.isActive == true) return
+        selectedTitleKey = null
+        _prompt.value = text
+        _results.value = SearchUiState.Discovering(text)
+        discoveryJob = viewModelScope.launch {
+            try {
+                val signals = library.recommendationSignals()
+                val result = client.discover(RecommendationRequest.from(signals, emptyList()), text)
+                val current = library.recommendationSignals()
+                if (current.profileId != signals.profileId || _prompt.value != text) return@launch
+                val hits = result.toTitles()
+                _results.value = if (hits.isEmpty()) SearchUiState.Empty else SearchUiState.Results(hits, text)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _results.value = SearchUiState.DiscoveryError(text,
+                    limited = (error as? DiscoveryException)?.status == 429)
+            }
+        }
+    }
+
+    fun clearDiscovery() {
+        selectedTitleKey = null
+        discoveryJob?.cancel()
+        _prompt.value = null
+        _results.value = SearchUiState.Idle()
     }
 
     fun onSearchSubmit() {
@@ -82,10 +142,11 @@ class SearchViewModel(
     class Factory(
         private val repository: TmdbRepository,
         private val library: UserLibraryRepository,
+        private val recommendations: RecommendationRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
-            SearchViewModel(repository, library) as T
+            SearchViewModel(repository, library, recommendations) as T
     }
 
     private companion object {

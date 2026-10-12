@@ -1,14 +1,13 @@
 """Internal-only bounded HTTP sidecar. Bodies and profile activity aren't logged."""
-import hashlib
 import json
 import os
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from engine import ContentCache, Engine, MODEL, TMDB, validate
-from model import Encoder
+from model import OpenRouter, ProviderError
 from catalog import CatalogIndex
+from home_cache import QuotaExceeded
 
 MAX_BODY = 1024 * 1024
 
@@ -16,32 +15,26 @@ MAX_BODY = 1024 * 1024
 class Service:
     def __init__(self, engine):
         self.engine = engine
-        self.gate = threading.BoundedSemaphore(1)
-        self.cache = {}
-        self.lock = threading.Lock()
+        self.home_gate = threading.BoundedSemaphore(1)
+        self.discovery_gate = threading.BoundedSemaphore(1)
 
     def recommend(self, request):
         validate(request)
-        version = getattr(getattr(self.engine, 'catalog', None), 'version', 0)
-        digest = hashlib.sha256((str(version) + json.dumps(request, sort_keys=True, separators=(',', ':'))).encode()).hexdigest()
-        now = time.time()
-        with self.lock:
-            entry = self.cache.get(digest)
-        if entry and now - entry[0] < (600 if entry[1].get('catalogReady', True) else 10) and now * 1000 < entry[1].get('validUntil', (now + 600) * 1000):
-            return entry[1]
-        if not self.gate.acquire(blocking=False):
+        if not self.home_gate.acquire(blocking=False):
             raise BlockingIOError('recommendation worker busy')
         try:
-            result = self.engine.recommend(request)
-            with self.lock:
-                # Only short-lived response hashes/results in RAM; never profiles on disk.
-                self.cache = {k: v for k, v in self.cache.items() if now - v[0] < 600}
-                if len(self.cache) >= 32:
-                    self.cache.pop(next(iter(self.cache)))
-                self.cache[digest] = (time.time(), result)
-            return result
+            return self.engine.recommend(request)
         finally:
-            self.gate.release()
+            self.home_gate.release()
+
+    def discover(self, request):
+        validate(request)
+        if not self.discovery_gate.acquire(blocking=False):
+            raise BlockingIOError('discovery worker busy')
+        try:
+            return self.engine.discover(request)
+        finally:
+            self.discovery_gate.release()
 
 
 def handler(service):
@@ -63,16 +56,16 @@ def handler(service):
         def do_GET(self):
             if self.path == '/health':
                 catalog = getattr(service.engine, 'catalog', None)
-                self.reply(200, {'status': 'ok', 'model': MODEL,
+                self.reply(200, {'status': 'ok', 'model': service.engine.model.model,
                                  'modelVersion': getattr(service.engine, 'model_version', ''),
                                  'catalogReady': catalog is not None and catalog.ready,
-                                 'catalogTitles': len(catalog.snapshot()[0]) if catalog is not None else 0,
+                                 'catalogTitles': len(catalog.snapshot()) if catalog is not None else 0,
                                  'catalogVersion': catalog.version if catalog is not None else 0})
             else:
                 self.reply(404, {'error': 'not found'})
 
         def do_POST(self):
-            if self.path != '/recommendations':
+            if self.path not in ('/recommendations', '/discover'):
                 self.reply(404, {'error': 'not found'})
                 return
             self.connection.settimeout(10)
@@ -82,15 +75,20 @@ def handler(service):
                     self.reply(413, {'error': 'request body too large or missing'})
                     return
                 request = json.loads(self.rfile.read(length))
-                result = service.recommend(request)
+                result = service.discover(request) if self.path == '/discover' else service.recommend(request)
                 self.reply(200, result)
             except (ValueError, TypeError, KeyError):
                 self.reply(400, {'error': 'invalid recommendation request'})
-            except BlockingIOError:
-                self.reply(429, {'error': 'recommendation worker busy'})
+            except (BlockingIOError, QuotaExceeded):
+                self.reply(429, {'error': 'discovery temporarily unavailable; try again later'})
             except Exception as error:
                 # Exception type only: external errors can contain the TMDB query API key.
-                print(f'recommendations failed: {type(error).__name__}', flush=True)
+                safe_reasons = {'Invalid model shelf names', 'Invalid model shelf size',
+                                'Invalid or duplicate model title', 'Model returned an invalid discovery response'}
+                reason = str(error) if str(error) in safe_reasons else type(error).__name__
+                if isinstance(error, ProviderError):
+                    reason = f'OpenRouter HTTP {error.status}'
+                print(f'recommendations failed: {reason}', flush=True)
                 self.reply(503, {'error': 'recommendations temporarily unavailable'})
     return Handler
 
@@ -100,14 +98,13 @@ def main():
     if not api_key:
         raise RuntimeError('TMDB_API_KEY is required')
     cache = ContentCache(os.environ.get('CONTENT_CACHE_DB', '/data/content.sqlite3'))
-    encoder = Encoder()
+    model = OpenRouter()
     tmdb = TMDB(api_key, cache)
-    engine = Engine(tmdb, cache, encoder)
-    engine.warm_themes()
-    engine.catalog = CatalogIndex(tmdb, cache, engine.vectors, fingerprint=engine.model_version)
-    engine.catalog.start()
+    catalog = CatalogIndex(tmdb, cache)
+    engine = Engine(tmdb, cache, model, catalog)
+    catalog.start()
     service = Service(engine)
-    print(f'recommendation model ready: {MODEL}', flush=True)
+    print(f'OpenRouter discovery ready: {model.model}', flush=True)
     ThreadingHTTPServer(('0.0.0.0', 8090), handler(service)).serve_forever()
 
 

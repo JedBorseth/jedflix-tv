@@ -2,7 +2,7 @@
 
 Home selects at most five dynamic Shelves from 27 families. The device's local
 date and time, actual viewing history, and verified TMDB metadata determine
-eligibility. Qwen3-Embedding-0.6B ranks theme fit and profile taste over a broader
+eligibility. OpenRouter Nemotron 3 Super selects and ranks theme fit and profile taste over a broader
 background-built catalog; it does not invent Titles or decide calendar dates.
 Each Shelf needs at least six eligible Titles. Discovery shelves deduplicate
 Titles, honor dislikes and existing release rules, and exclude watched/library
@@ -51,6 +51,12 @@ wait while a poster Shelf has focus, preserving each Shelf's independent scroll.
 Expired themes are removed at the next safe Home visit. No focus gesture starts
 model inference or catalog acquisition.
 
-The dedicated TV GPU service runs independently of music AI. See
-[server setup and wire contract](../server/README.md#personalized-discovery) and
-[model research](dynamic-home-model-research.md) for deployment and evaluation.
+A daily model-generated Home plan persists on the server; the global budget allows
+at most two Home generation attempts per Vancouver date, including failures.
+That one plan covers the date's time windows, so calendar/daypart changes select
+cached rankings without another model call. Runtime/release/theme checks and
+current dislikes/watched/library exclusions still apply when displaying it.
+Search prompt results are generated live and do not enter the Home cache.
+The TV recommender no longer loads a local model or reserves a GPU. See
+[server cache and wire contract](../server/README.md#personalized-discovery) and
+[OpenRouter evaluation](openrouter-nemotron-evaluation.md).

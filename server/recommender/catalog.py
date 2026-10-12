@@ -1,14 +1,12 @@
 """A bounded, persistent public TMDB corpus warmed outside Home requests.
 
-Only public title metadata and model-versioned vectors are persisted. Profile
+Only public title metadata is persisted. Profile
 signals never enter this cache. Reads take a short lock and never perform network
-or GPU work; a single daemon serializes paced TMDB acquisition and vector batches.
+or model work; a single daemon serializes paced TMDB acquisition.
 """
 from collections import deque
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-import hashlib
-import json
 import logging
 import os
 import threading
@@ -24,19 +22,19 @@ _BATCH = 8
 
 
 class CatalogIndex:
-    def __init__(self, tmdb, cache, vectorize, fingerprint='catalog-default', *,
+    def __init__(self, tmdb, cache, *,
                  target=None, request_interval=0.3, refresh_interval=60):
-        self.tmdb, self.cache, self.vectorize = tmdb, cache, vectorize
-        self.fingerprint = str(fingerprint)
+        self.tmdb, self.cache = tmdb, cache
         self.target = min(10_000, max(40, int(target or os.environ.get('RECOMMENDER_CATALOG_SIZE', '3000'))))
         self.request_interval, self.refresh_interval = request_interval, refresh_interval
-        self._metadata, self._vectors, self._pending = {}, {}, {}
+        self._metadata, self._pending = {}, {}
         self._recipes = deque()
         self._recipe_templates = []
         self._person_queries = set()
         self._keyword_ids = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._worker = None
         self._version = 0
         self._last_request = 0
@@ -51,7 +49,7 @@ class CatalogIndex:
     @property
     def ready(self):
         with self._lock:
-            return len(self._vectors) >= min(120, self.target)
+            return len(self._metadata) >= min(120, self.target)
 
     @property
     def version(self):
@@ -60,7 +58,7 @@ class CatalogIndex:
 
     def snapshot(self):
         with self._lock:
-            return dict(self._metadata), dict(self._vectors)
+            return dict(self._metadata)
 
     def request(self, references):
         """Queue public IDs for enrichment, preserving caller priority; no IO."""
@@ -72,7 +70,7 @@ class CatalogIndex:
                     continue
                 ident = f'{kind}-{value}'
                 existing = self._metadata.get(ident)
-                if existing and self._fresh(existing) and ident in self._vectors:
+                if existing and self._fresh(existing):
                     continue
                 if len(self._pending) >= _MAX_PENDING and ident not in self._pending:
                     background = next((queued for queued, task in reversed(self._pending.items())
@@ -81,6 +79,31 @@ class CatalogIndex:
                         break
                     self._pending.pop(background)
                 self._pending[ident] = (kind, value, True)
+        self._wake.set()
+
+    def expand_prompt(self, prompt):
+        """Bounded public acquisition; queue enrichment rather than delaying inference."""
+        lowered = prompt.lower()
+        hints = ((('silly', 'goofy', 'laugh'), 'parody', 35),
+                 (('twist', 'mystery'), 'plot twist', 9648),
+                 (('world', 'space', 'sci-fi'), 'space travel', 878),
+                 (('comfort', 'cozy', 'feel-good'), 'friendship', 35))
+        match = next(((word, genre) for triggers, word, genre in hints if any(t in lowered for t in triggers)), None)
+        if match is None:
+            return
+        word, genre = match
+        try:
+            found = self.tmdb.get('/search/keyword', query=word, timeout=2).get('results', [])
+            keyword = next((value['id'] for value in found if value.get('name', '').casefold() == word), None)
+            query = {'with_genres': genre, 'sort_by': 'vote_count.desc', 'include_adult': 'false'}
+            if keyword:
+                query['with_keywords'] = keyword
+            rows = self.tmdb.get('/discover/movie', timeout=2, **query).get('results', [])[:20]
+            self.request({'movie-' + str(row['id']): {'id': row['id'], 'mediaType': 'movie'}
+                          for row in rows if row.get('id') and not row.get('adult')})
+        except (OSError, ValueError, TimeoutError):
+            # Current public metadata remains usable when optional acquisition fails.
+            pass
 
     def start(self):
         with self._lock:
@@ -92,6 +115,7 @@ class CatalogIndex:
 
     def stop(self, timeout=10):
         self._stop.set()
+        self._wake.set()
         worker = self._worker
         if worker is not None:
             worker.join(timeout)
@@ -103,23 +127,8 @@ class CatalogIndex:
             if not isinstance(value, dict) or not value.get('id'):
                 continue
             self._metadata[ident] = value
-            record = self.cache.get('vectors', self._vector_key(ident))
-            if isinstance(record, dict) and record.get('digest') == self._vector_digest(value):
-                self._vectors[ident] = record['vector']
         if self._metadata:
             self._version += 1
-
-    def _vector_key(self, ident):
-        # Overwrite one record per public title, rather than accumulating another
-        # 1024-float copy every time popularity or providers change.
-        return f'catalog:v3:vector:{self.fingerprint}:{ident}'
-
-    @staticmethod
-    def _vector_digest(metadata):
-        # Share the engine's exact document recipe, so structured eligibility
-        # metadata cannot invalidate an unchanged semantic embedding.
-        from engine import text
-        return hashlib.sha256(text(metadata).encode()).hexdigest()
 
     @staticmethod
     def _fresh(metadata):
@@ -133,14 +142,8 @@ class CatalogIndex:
     def _publish(self, values):
         if not values:
             return
-        # Encoder caches underlying content digests, including model recipe/version.
-        vectors = self.vectorize(values)
         for ident, value in values.items():
             self.cache.put('content', _METADATA + ident, value)
-            vector = vectors.get(ident)
-            if vector is not None:
-                self.cache.put('vectors', self._vector_key(ident),
-                               {'digest': self._vector_digest(value), 'vector': vector})
         evicted = []
         with self._lock:
             for ident, value in values.items():
@@ -148,19 +151,14 @@ class CatalogIndex:
                     # Bounded FIFO public corpus; never evict according to a profile.
                     victim = next(iter(self._metadata))
                     self._metadata.pop(victim)
-                    self._vectors.pop(victim, None)
                     evicted.append(victim)
                 # A public metadata refresh is a new FIFO publication. A freshly
                 # enriched seed cannot be evicted later in the very same batch.
                 self._metadata.pop(ident, None)
                 self._metadata[ident] = value
-                self._vectors.pop(ident, None)
-                if ident in vectors:
-                    self._vectors[ident] = vectors[ident]
             self._version += 1
         for ident in evicted:
             self.cache.delete('content', _METADATA + ident)
-            self.cache.delete('vectors', self._vector_key(ident))
         self._save_state()
 
     def _api(self, callback):
@@ -303,8 +301,6 @@ class CatalogIndex:
             # Explicit IDs precede discovery IDs even if discovered earlier.
             selected = sorted(self._pending, key=lambda ident: not self._pending[ident][2])[:_BATCH]
             pending = [(ident, self._pending.pop(ident)) for ident in selected]
-            missing = {ident: value for ident, value in self._metadata.items()
-                       if ident not in self._vectors}
         if pending:
             values = {}
             for ident, (kind, value, requested) in pending:
@@ -324,9 +320,6 @@ class CatalogIndex:
                     _LOG.warning('Catalog detail %s failed: %s', ident, type(error).__name__)
             self._publish(values)
             return bool(values)
-        if missing:
-            self._publish(dict(list(missing.items())[:_BATCH]))
-            return True
         if time.time() >= self._next_sweep:
             self._next_sweep = time.time() + self.refresh_interval
             with self._lock:
@@ -353,4 +346,5 @@ class CatalogIndex:
                 _LOG.warning('Catalog background warmup failed: %s', type(error).__name__)
                 worked = False
             if not worked:
-                self._stop.wait(self.refresh_interval)
+                self._wake.wait(self.refresh_interval)
+                self._wake.clear()

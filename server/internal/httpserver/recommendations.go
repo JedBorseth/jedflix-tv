@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	_ "time/tzdata"
+	"unicode/utf8"
 )
 
 const maxRecommendationBody = 1 << 20
@@ -46,6 +48,8 @@ type recommendationCandidate struct {
 }
 
 type recommendationRequest struct {
+	CacheToken string                    `json:"cacheToken,omitempty"`
+	Prompt     string                    `json:"prompt,omitempty"`
 	TimeZone   string                    `json:"timeZone"`
 	History    []recommendationHistory   `json:"history"`
 	MyList     []recommendationSignal    `json:"myList"`
@@ -53,11 +57,16 @@ type recommendationRequest struct {
 	Candidates []recommendationCandidate `json:"candidates"`
 }
 
+var cacheTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,100}$`)
+
 func validTitle(id int, kind string) bool {
 	return id > 0 && id < 1<<31 && (kind == "movie" || kind == "tv")
 }
 
 func (body recommendationRequest) valid() bool {
+	if utf8.RuneCountInString(body.Prompt) > 500 || (body.CacheToken != "" && !cacheTokenPattern.MatchString(body.CacheToken)) {
+		return false
+	}
 	if len(body.TimeZone) > 80 || body.TimeZone == "Local" {
 		return false
 	}
@@ -93,6 +102,14 @@ func (body recommendationRequest) valid() bool {
 }
 
 func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
+	s.forwardDiscovery(w, r, "/recommendations")
+}
+
+func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
+	s.forwardDiscovery(w, r, "/discover")
+}
+
+func (s *Server) forwardDiscovery(w http.ResponseWriter, r *http.Request, path string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.cfg.RecommendationsURL == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "recommendations unavailable"})
@@ -103,6 +120,10 @@ func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&body); err != nil || !body.valid() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid recommendation request"})
+		return
+	}
+	if path == "/discover" && strings.TrimSpace(body.Prompt) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "discovery prompt required"})
 		return
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
@@ -124,10 +145,14 @@ func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
 	if body.TimeZone == "" {
 		body.TimeZone = "UTC"
 	}
-	// The public route permits one in-flight request; clips and health remain independent.
+	// Live prompt work must not hold up cached Home reads or clips/health.
+	gate := s.recommendationGate
+	if path == "/discover" {
+		gate = s.discoveryGate
+	}
 	select {
-	case s.recommendationGate <- struct{}{}:
-		defer func() { <-s.recommendationGate }()
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
 	default:
 		w.Header().Set("Retry-After", "30")
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "recommendation worker busy"})
@@ -142,7 +167,7 @@ func (s *Server) handleRecommendations(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.cfg.RecommendationsURL, "/")+"/recommendations", bytes.NewReader(encoded))
+	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.cfg.RecommendationsURL, "/")+path, bytes.NewReader(encoded))
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "recommendations unavailable"})
 		return

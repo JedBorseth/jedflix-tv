@@ -283,8 +283,20 @@ class CatalogViewModel(
             while (activeProfileId == profileId) {
                 val zone = ZoneId.systemDefault().id
                 delay(refreshed?.nextRefreshDelay(System.currentTimeMillis(), zone) ?: 60_000L)
-                refreshed = client.refresh(profileId, request.copy(timeZone = ZoneId.systemDefault().id))
-                if (activeProfileId == profileId) publishDiscovery(DiscoveryState(profileId, refreshed, dislikes))
+                val latest = try {
+                    library.recommendationSignals()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    continue
+                }
+                if (activeProfileId != profileId || latest.profileId != profileId) return@launch
+                val currentCatalog = (tmdb.value as? CatalogUiState.Ready)?.catalog ?: catalog
+                val latestRequest = RecommendationRequest.from(latest, currentCatalog.rows.flatMap { it.items })
+                val latestDislikes = latest.feedback.filter { it.value == "dislike" }
+                    .map { "${it.mediaType}-${it.tmdbId}" }.toSet()
+                refreshed = client.refresh(profileId, latestRequest)
+                if (activeProfileId == profileId) publishDiscovery(DiscoveryState(profileId, refreshed, latestDislikes))
             }
         }
     }

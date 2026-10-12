@@ -4,11 +4,11 @@ import json
 import math
 import os
 import sqlite3
+import re
 import threading
 import time
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -17,9 +17,6 @@ from model import MODEL, REVISION
 MAX_CANDIDATES = 300
 MAX_SIGNALS = 200
 MAX_DYNAMIC_SHELVES = 5
-MIN_THEME_SIMILARITY = 0.30
-THEME_FIT_MARGIN = 0.12
-THEME_INSTRUCTION = 'Retrieve movies or television shows matching the viewing mood, subjects and themes in the query.'
 
 
 def key(item):
@@ -68,6 +65,12 @@ def validate(request):
         ZoneInfo(zone)
     except (ZoneInfoNotFoundError, ValueError):
         raise ValueError('invalid timeZone') from None
+    token = request.get('cacheToken', '')
+    if not isinstance(token, str) or (token and not re.fullmatch(r'[A-Za-z0-9_-]{16,100}', token)):
+        raise ValueError('invalid cacheToken')
+    prompt = request.get('prompt', '')
+    if not isinstance(prompt, str) or len(prompt) > 500:
+        raise ValueError('invalid prompt')
     limits = {'candidates': MAX_CANDIDATES, 'history': MAX_SIGNALS,
               'myList': MAX_SIGNALS, 'feedback': MAX_SIGNALS}
     for field, limit in limits.items():
@@ -132,7 +135,7 @@ class TMDB:
     def __init__(self, api_key, cache, base='https://api.themoviedb.org/3'):
         self.api_key, self.cache, self.base = api_key, cache, base
 
-    def get(self, path, **query):
+    def get(self, path, *, timeout=5, **query):
         # Pages, themes and filters must never share a cache entry. Credentials
         # are added only after building this public-content identity.
         public_query = {**query, 'language': 'en-US'}
@@ -143,7 +146,7 @@ class TMDB:
         query.update(api_key=self.api_key, language='en-US')
         req = urllib.request.Request(self.base + path + '?' + urllib.parse.urlencode(query),
                                      headers={'Accept': 'application/json'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             data = json.load(response)
         self.cache.put('content', ident, data)
         return data
@@ -180,30 +183,6 @@ def text(metadata):
                       'Genres: ' + ', '.join(g['name'] for g in metadata.get('genres', [])),
                       'Themes: ' + ', '.join(g['name'] for g in terms[:20]),
                       'Cast: ' + ', '.join(g['name'] for g in cast), 'Directors: ' + ', '.join(directors)])
-
-
-def cosine(a, b):
-    # The embedding model returns normalized vectors.
-    return sum(x * y for x, y in zip(a, b))
-
-
-class Similarities:
-    """Reuse a CPU float32 corpus matrix; no GPU inference during ranking."""
-    def __init__(self, vectors, identities):
-        self.vectors, self.identities = vectors, list(identities)
-        try:
-            import numpy as np
-        except ImportError:
-            np = None
-        self.np = np
-        self.matrix = np.asarray([vectors[ident] for ident in self.identities], dtype=np.float32) if np is not None and self.identities else None
-
-    def against(self, vector):
-        if self.matrix is not None:
-            values = self.matrix @ self.np.asarray(vector, dtype=self.np.float32)
-        else:
-            values = [cosine(self.vectors[ident], vector) for ident in self.identities]
-        return dict(zip(self.identities, map(float, values)))
 
 
 def signals(request, now_ms):
@@ -243,262 +222,286 @@ def signals(request, now_ms):
     return ordered, excluded, dislikes
 
 
-def diverse_rank(pool, scores, vectors, limit, selected=()):
-    # Shortlist before diversity scoring: the full public corpus can be large.
-    remaining = sorted(pool, key=lambda ident: (-scores[ident], ident))[:max(160, limit * 8)]
-    try:
-        import numpy as np
-    except ImportError:
-        np = None
-    if np is not None and remaining:
-        matrix = np.asarray([vectors[ident] for ident in remaining], dtype=np.float32)
-        base = np.asarray([scores[ident] for ident in remaining], dtype=np.float32)
-        redundancy = np.zeros(len(remaining), dtype=np.float32)
-        for ident in selected:
-            if ident in vectors:
-                redundancy = np.maximum(redundancy, matrix @ np.asarray(vectors[ident], dtype=np.float32))
-        result = []
-        for _ in range(min(limit, len(remaining))):
-            index = int(np.argmax(base - 0.18 * redundancy))
-            result.append(remaining[index])
-            redundancy = np.maximum(redundancy, matrix @ matrix[index])
-            base[index] = -np.inf
-        return result
-    remaining, chosen = set(remaining), list(selected)
-    result = []
-    while remaining and len(result) < limit:
-        def adjusted(ident):
-            redundancy = max((cosine(vectors[ident], vectors[other]) for other in chosen if other in vectors), default=0)
-            return scores[ident] - 0.18 * redundancy
-        best = max(sorted(remaining), key=adjusted)
-        result.append(best)
-        chosen.append(best)
-        remaining.remove(best)
-    return result
-
 
 class Engine:
-    def __init__(self, tmdb, cache, encoder, catalog=None):
-        self.tmdb, self.cache, self.encoder = tmdb, cache, encoder
-        self.catalog = catalog
-        self.inference_lock = threading.Lock()
-        self.theme_vectors = {}
+    """One persistent daily Home plan; uncached prompt discovery uses the same curator."""
+    def __init__(self, tmdb, cache, model, catalog, home_cache=None):
+        from home_cache import HomeCache
+        self.tmdb, self.cache, self.model, self.catalog = tmdb, cache, model, catalog
+        self.home_cache = home_cache or HomeCache(cache, os.environ.get('HOME_TIME_ZONE', 'America/Vancouver'))
+        self.home_lock = threading.Lock()
 
     @property
     def model_version(self):
-        return getattr(self.encoder, 'cache_fingerprint', MODEL + ':' + REVISION)
+        return self.model.version
 
-    def vectors(self, metadata):
-        found, missing = {}, {}
-        for ident, value in metadata.items():
-            description = text(value)
-            digest = hashlib.sha256((self.model_version + description).encode()).hexdigest()
-            vector = self.cache.get('vectors', digest)
-            if vector is None:
-                missing[ident] = (description, digest)
-            else:
-                found[ident] = vector
-        if missing:
-            with self.inference_lock:
-                encoded = self.encoder([value[0] for value in missing.values()])
-            for (ident, (_, digest)), vector in zip(missing.items(), encoded):
-                vector = [float(value) for value in vector]
-                self.cache.put('vectors', digest, vector)
-                found[ident] = vector
-        return found
-
-    def warm_themes(self):
-        from themes import theme_definitions
-        themes = theme_definitions()
-        self.query_vectors([theme.query for theme in themes])
-
-    def query_vectors(self, queries):
-        missing = list(dict.fromkeys(query for query in queries if query not in self.theme_vectors))
-        if missing:
-            with self.inference_lock:
-                if hasattr(self.encoder, 'encode_queries'):
-                    vectors = self.encoder.encode_queries(missing, THEME_INSTRUCTION)
-                else:
-                    vectors = self.encoder(missing)
-            for query, vector in zip(missing, vectors):
-                self.theme_vectors[query] = vector
-            while len(self.theme_vectors) > 512:
-                self.theme_vectors.pop(next(iter(self.theme_vectors)))
-        return {query: self.theme_vectors[query] for query in queries}
-
-    def recommend(self, request, now=None):
-        validate(request)
-        now = now or datetime.now(timezone.utc)
-        local_now = now.astimezone(ZoneInfo(request.get('timeZone', 'UTC')))
+    def _prepare(self, request, now):
+        local = now.astimezone(ZoneInfo(request.get('timeZone', 'UTC')))
         now_ms = int(now.timestamp() * 1000)
         seeds, excluded, dislikes = signals(request, now_ms)
-        # Actual successful playback is account-local evidence, never persisted as
-        # global availability. Legacy resume position alone isn't stream proof.
-        verified_streams = {key(row) for row in request.get('history', [])
-                            if row.get('watchedMs', 0) >= 10_000
-                            and now_ms - 7 * 86_400_000 <= row.get('lastWatchedAt', 0) <= now_ms + 300_000}
+        references = {key(row): {'id': row['tmdbId'], 'mediaType': row['mediaType']} for row in seeds}
+        references.update({key(row): {'id': row['tmdbId'], 'mediaType': row['mediaType']}
+                           for row in request.get('feedback', []) if key(row) in dislikes})
         supplied = {key(row): row for row in request.get('candidates', [])}
-        # Cold corpus warmup must establish taste vectors before its candidate budget.
-        references = {}
-        for seed in seeds:
-            references[key(seed)] = {'id': seed['tmdbId'], 'mediaType': seed['mediaType']}
-        negative_seeds = [row for row in request.get('feedback', []) if key(row) in dislikes][:10]
-        for row in negative_seeds:
-            references[key(row)] = {'id': row['tmdbId'], 'mediaType': row['mediaType']}
         references.update(supplied)
-        related = {}
-        # Candidate generation from meaningful viewing broadens discovery beyond Home.
-        because_seeds = sorted((s for s in seeds if s.get('watched')), key=lambda s: s.get('lastWatchedAt', 0), reverse=True)[:2]
-        for seed in because_seeds if self.catalog is None else []:
-            try:
-                recs = self.tmdb.recommendations(seed['mediaType'], seed['tmdbId'])
-            except Exception:
-                recs = []
-            related[key(seed)] = set()
-            for row in recs:
-                row = {**row, 'mediaType': seed['mediaType']}
-                ident = key(row)
-                related[key(seed)].add(ident)
-                references.setdefault(ident, row)
-        if self.catalog is not None:
-            # Enrichment and embeddings run in the background. Home never waits
-            # for hundreds of TMDB calls or a catalog encoding batch.
-            self.catalog.request(references)
-            metadata, vectors = self.catalog.snapshot()
-        else:
-            # Bounded synchronous path remains useful to exercise the full
-            # policy with injected dependencies; production always has an index.
-            deadline = time.monotonic() + 35
-            def fetch(pair):
-                ident, row = pair
-                if time.monotonic() > deadline:
-                    return ident, None
-                try:
-                    return ident, self.tmdb.detail(row['mediaType'], row['id'])
-                except Exception:
-                    return ident, None
-            with ThreadPoolExecutor(max_workers=6) as workers:
-                metadata = {ident: value for ident, value in workers.map(fetch, references.items()) if value is not None}
-        evaluated, eligible, items, public_dates = [], [], {}, {}
+        self.catalog.request(references)
+        metadata = self.catalog.snapshot()
+        verified = {key(row) for row in request.get('history', [])
+                    if row.get('watchedMs', 0) >= 10_000 and
+                    now_ms - 7 * 86_400_000 <= row.get('lastWatchedAt', 0) <= now_ms + 300_000}
+        eligible, evaluated, dates, items = [], [], {}, {}
         for ident, value in metadata.items():
             kind = ident.split('-', 1)[0]
-            allowed, first = release_policy(value, kind, local_now.date())
-            if not allowed and first and first <= local_now.date() and ident in verified_streams:
+            allowed, first = release_policy(value, kind, local.date())
+            if not allowed and first and first <= local.date() and ident in verified:
                 allowed = True
             if ident in supplied:
                 evaluated.append(ident)
                 if first:
-                    public_dates[ident] = first.isoformat()
+                    dates[ident] = first.isoformat()
             if allowed and not value.get('adult', False):
                 eligible.append(ident)
                 if ident not in excluded and value.get('poster_path'):
                     items[ident] = candidate(value, kind, first)
-        if not metadata and references and self.catalog is None:
-            raise RuntimeError('TMDB metadata unavailable')
-        # Only eligible candidates and profile seeds need inference.
-        vector_metadata = {ident: value for ident, value in metadata.items()
-                           if ident in items or ident in {key(s) for s in seeds + negative_seeds}}
-        if self.catalog is None:
-            vectors = self.vectors(vector_metadata)
-        items = {ident: value for ident, value in items.items() if ident in vectors}
-        positive = [(key(s), s['weight']) for s in seeds if key(s) in vectors]
-        # Several distinct taste anchors rather than a single vector that averages genres away.
-        interests = []
-        for ident, weight in positive:
-            if len(interests) >= 8:
-                break
-            if all(cosine(vectors[ident], vectors[other]) < 0.88 for other, _ in interests):
-                interests.append((ident, weight))
-        similarities = Similarities(vectors, items)
-        taste_scores = dict.fromkeys(items, 0.0)
-        for seed, weight in interests:
-            for ident, score in similarities.against(vectors[seed]).items():
-                taste_scores[ident] = max(taste_scores[ident], score * (0.8 + 0.2 * min(1, weight / 2)))
-        negative_scores = dict.fromkeys(items, 0.0)
-        for other in dislikes:
-            if other in vectors:
-                for ident, score in similarities.against(vectors[other]).items():
-                    negative_scores[ident] = max(negative_scores[ident], max(0, score - 0.65))
-        scores = {}
-        for ident in items:
-            quality = min(1, (items[ident].get('rating') or 0) / 10)
-            scores[ident] = 0.85 * taste_scores[ident] + 0.15 * quality - 0.5 * negative_scores[ident]
-        shelves, used, because_shelves = [], set(), []
-        dynamic_shelves = []
-        if self.catalog is not None:
-            from themes import active_themes, eligible_for_theme, profile_context, theme_definitions
-            definitions = {theme.id: theme for theme in theme_definitions()}
-            context = profile_context(request, metadata, local_now)
-            dynamic_count = 0
-            for theme in active_themes(request, metadata, local_now):
-                available = {ident for ident in items if ident not in used and eligible_for_theme(
-                    theme, metadata[ident], ident.split('-', 1)[0], context)}
-                if len(available) < 6:
+        ready = self.catalog.ready and all(key(seed) in metadata for seed in seeds[:20]) and (
+            all(ident in metadata for ident in sorted(dislikes)[:10]))
+        return dict(local=local, seeds=seeds, excluded=excluded, dislikes=dislikes,
+                    metadata=metadata, items=items, ready=ready, evidence={
+                        'eligibleKeys': eligible, 'evaluatedKeys': evaluated,
+                        'publicReleaseDates': dates, 'completeEligibility': len(evaluated) == len(supplied)})
+
+    @staticmethod
+    def _description(ident, metadata):
+        value = metadata[ident]
+        words = value.get('keywords', {})
+        return {'key': ident, 'title': value.get('title') or value.get('name'),
+                'overview': (value.get('overview') or '')[:650],
+                'genres': [g['name'] for g in value.get('genres', [])],
+                'keywords': [g['name'] for g in words.get('keywords', words.get('results', []))[:12]],
+                'year': str(value.get('release_date') or value.get('first_air_date') or '')[:4],
+                'runtime': value.get('runtime'), 'rating': value.get('vote_average'),
+                'votes': value.get('vote_count'), 'popularity': value.get('popularity'),
+                'cast': [p['name'] for p in value.get('credits', {}).get('cast', [])[:4]],
+                'directors': [p['name'] for p in value.get('credits', {}).get('crew', []) if p.get('job') == 'Director'][:2]}
+
+    def _taste(self, state):
+        # Only public descriptions and relative relevance leave the server.
+        # No profile token, raw viewing durations, timestamps or credentials enter prompts.
+        positive = [{**self._description(key(seed), state['metadata']), 'relevance': round(seed['weight'], 2)}
+                    for seed in state['seeds'][:20] if key(seed) in state['metadata']]
+        negative = [self._description(ident, state['metadata'])
+                    for ident in sorted(state['dislikes'])[:10] if ident in state['metadata']]
+        return {'positiveReferences': positive, 'negativeReferences': negative}
+
+    def _shortlist(self, keys, metadata, seeds, limit, salt=''):
+        # Acquisition only: retain broad coverage and seed-linked metadata. The model
+        # makes the final theme/taste selection and ordering; no local model is involved.
+        genres = set()
+        for seed in seeds[:10]:
+            genres.update(g['id'] for g in metadata.get(key(seed), {}).get('genres', []) if 'id' in g)
+        def priority(ident):
+            value = metadata[ident]
+            overlap = len(genres & {g['id'] for g in value.get('genres', []) if 'id' in g})
+            quality = float(value.get('vote_average') or 0) * min(1, math.log1p(value.get('vote_count') or 0) / 7)
+            return (-overlap, -quality, hashlib.sha256((salt + ident).encode()).digest())
+        ordered = sorted(keys, key=priority)
+        if len(ordered) <= limit:
+            return ordered
+        # A quarter of the slate explores other genres/popularity bands.
+        head = ordered[:limit * 3 // 4]
+        rest = sorted(ordered[len(head):], key=lambda ident: hashlib.sha256((salt + ident).encode()).digest())
+        return head + rest[:limit - len(head)]
+
+    @staticmethod
+    def _schema(pools, limits):
+        return {'type': 'object', 'additionalProperties': False, 'required': list(pools),
+                'properties': {ident: {'type': 'array', 'maxItems': limits.get(ident, 24),
+                    'items': {'type': 'string', 'enum': keys}} for ident, keys in pools.items()}}
+
+    @staticmethod
+    def _validated(result, pools, limits):
+        if not isinstance(result, dict) or set(result) != set(pools):
+            raise RuntimeError('Invalid model shelf names')
+        ranked = {}
+        discarded = {'duplicate': 0, 'ineligible': 0, 'wrongType': 0}
+        for ident, values in result.items():
+            if not isinstance(values, list) or len(values) > limits.get(ident, 24):
+                raise RuntimeError('Invalid model shelf size')
+            allowed, seen = set(pools[ident]), set()
+            selected = []
+            for value in values:
+                if not isinstance(value, str):
+                    discarded['wrongType'] += 1
                     continue
-                query_text = definitions['more-director'].query if theme.id.startswith('more-director-') else definitions['starring-actor'].query if theme.id.startswith('starring-actor-') else theme.query
-                query = self.query_vectors([query_text])[query_text]
-                fit = similarities.against(query)
-                # Taste can reorder genuine matches, but must not turn an
-                # unrelated favorite into holiday or mood-shelf filler.
-                strongest = max(fit[ident] for ident in available)
-                floor = max(MIN_THEME_SIMILARITY, strongest - THEME_FIT_MARGIN)
-                available = {ident for ident in available if fit[ident] >= floor}
-                if len(available) < 6:
+                if value not in allowed:
+                    discarded['ineligible'] += 1
                     continue
-                theme_scores = {ident: 0.65 * fit[ident] + 0.25 * taste_scores[ident]
-                                + 0.1 * min(1, (items[ident].get('rating') or 0) / 10)
-                                - 0.5 * negative_scores[ident] for ident in available}
-                # New-show successors inherit the taste of the completed Show
-                # through the normal interest anchors, rather than copying its titles.
-                ranked = diverse_rank(available, theme_scores, vectors, 16)
-                if len(ranked) < 6:
+                if value in seen:
+                    discarded['duplicate'] += 1
                     continue
-                dynamic_shelves.append({'id': 'dynamic-' + theme.id, 'title': theme.title,
-                                'items': [items[ident] for ident in ranked]})
+                seen.add(value)
+                selected.append(value)
+            ranked[ident] = selected
+        if any(discarded.values()):
+            print(f'Model selection guard: {json.dumps(discarded)}', flush=True)
+        return ranked
+
+    def _home_plan(self, request, state, now):
+        from themes import active_themes, eligible_for_theme, profile_context
+        metadata, items, seeds = state['metadata'], state['items'], state['seeds']
+        local = state['local']
+        context = profile_context(request, metadata, local)
+        # Cache selections for every time window of this local date, not just arrival.
+        themes = {}
+        for hour in (0, 3, 12, 16, 17, 22):
+            for theme in active_themes(request, metadata, local.replace(hour=hour, minute=0, second=0)):
+                themes[theme.id] = theme
+        pools, labels, instructions, limits = {}, {}, {}, {'for-you': 40}
+        for theme in sorted(themes.values(), key=lambda value: (-value.priority, value.id)):
+            eligible = [ident for ident in items if eligible_for_theme(theme, metadata[ident], ident.split('-', 1)[0], context)]
+            if len(eligible) >= 6:
+                ident = 'dynamic-' + theme.id
+                pools[ident] = self._shortlist(eligible, metadata, seeds, 42, local.date().isoformat())
+                labels[ident], instructions[ident] = theme.title, theme.query
+        because = sorted((seed for seed in seeds if seed.get('watched') and key(seed) in metadata),
+                         key=lambda seed: seed.get('lastWatchedAt', 0), reverse=True)[:2]
+        for seed in because:
+            ident = 'because-' + key(seed)
+            pools[ident] = self._shortlist(items, metadata, [seed], 90, local.date().isoformat())
+            labels[ident] = 'Because you watched ' + (metadata[key(seed)].get('title') or metadata[key(seed)].get('name') or '')
+            instructions[ident] = 'Recommend genuine thematic/style successors to this reference: ' + text(metadata[key(seed)])[:1500]
+            limits[ident] = 18
+        if len(items) >= 6:
+            pools['for-you'] = self._shortlist(items, metadata, seeds, 240, local.date().isoformat())
+            labels['for-you'] = 'For You'
+            instructions['for-you'] = 'A varied mix of highly relevant discoveries. For a fresh profile, curate a broadly appealing mix without claiming personal knowledge.'
+        if not pools:
+            raise BlockingIOError('Catalog has too few eligible titles')
+        keys = set(ident for values in pools.values() for ident in values)
+        prompt = {'task': 'Generate a full day of Home shelves. Return ordered keys for each requested shelf; empty arrays are allowed. '
+                          'Select up to 24 excellent matches per dynamic shelf, 18 per because shelf, 40 for For You. '
+                          'These shelves can activate at different hours. Avoid excessive overlap, but do not sacrifice theme fit. '
+                          'Never pad a shelf with weak matches. Comfort shelves must be low-stress and warm, not merely labeled Comedy.',
+                  'taste': self._taste(state), 'shelves': {
+                      ident: {'title': labels[ident], 'theme': instructions[ident], 'eligibleKeys': values}
+                      for ident, values in pools.items()},
+                  'candidates': [self._description(ident, metadata) for ident in sorted(keys)]}
+        result = self.model.generate(prompt, self._schema(pools, limits), home=True)
+        rankings = self._validated(result, pools, limits)
+        if not any(rankings.values()):
+            raise RuntimeError('Model returned no usable Home selections')
+        return {'day': local.date().isoformat(), 'timeZone': request.get('timeZone', 'UTC'),
+                'model': self.model.model,
+                'modelVersion': self.model_version, 'generatedAt': int(now.timestamp() * 1000),
+                'legacyClient': not bool(request.get('cacheToken')),
+                'rankings': rankings, 'labels': labels}
+
+    @staticmethod
+    def _token(request):
+        token = request.get('cacheToken', '')
+        if token:
+            return token
+        # Older clients have no anonymous cache token. Their title IDs form a
+        # bounded legacy cache identity; progress ticks never invalidate it.
+        ids = {field: sorted({key(row) for row in request.get(field, [])}) for field in ('history', 'myList', 'feedback')}
+        latest_feedback = {}
+        for row in request.get('feedback', []):
+            ident = key(row)
+            if ident not in latest_feedback or row.get('updatedAt', 0) >= latest_feedback[ident].get('updatedAt', 0):
+                latest_feedback[ident] = row
+        ids['feedback'] = sorted((ident, row['value']) for ident, row in latest_feedback.items())
+        return 'legacy-' + hashlib.sha256(json.dumps(ids, sort_keys=True).encode()).hexdigest()
+
+    def recommend(self, request, now=None):
+        from home_cache import QuotaExceeded
+        from themes import active_themes, eligible_for_theme, profile_context
+        validate(request)
+        now = now or datetime.now(timezone.utc)
+        state = self._prepare(request, now)
+        token = self._token(request)
+        with self.home_lock:
+            plan = self.home_cache.get(token, now)
+            if plan is None and request.get('cacheToken'):
+                # An app update must not spend another generation just to adopt
+                # the new anonymous profile token. Only migrate an actual old-client plan.
+                legacy = self.home_cache.get(self._token({**request, 'cacheToken': ''}), now)
+                if legacy and legacy.get('legacyClient'):
+                    plan = legacy
+                    self.home_cache.save(token, plan, now)
+            fresh = plan and plan['day'] == state['local'].date().isoformat() and (
+                plan.get('timeZone') == request.get('timeZone', 'UTC') and plan.get('modelVersion') == self.model_version)
+            if not fresh and state['ready']:
+                try:
+                    self.home_cache.reserve('home', now, token)
+                    replacement = self._home_plan(request, state, now)
+                    self.home_cache.save(token, replacement, now)
+                    plan = replacement
+                except Exception:
+                    # A failed refresh retains the last verified model output.
+                    if plan is None:
+                        raise
+            if plan is None:
+                if not state['ready']:
+                    raise BlockingIOError('Public catalog is warming')
+                raise QuotaExceeded('Home daily generation allowance reached')
+        metadata, items, local = state['metadata'], state['items'], state['local']
+        context = profile_context(request, metadata, local)
+        used, dynamic, personal = set(), [], []
+        for theme in active_themes(request, metadata, local):
+            ident = 'dynamic-' + theme.id
+            ranked = [value for value in plan['rankings'].get(ident, []) if value in items and value not in used and
+                      eligible_for_theme(theme, metadata[value], value.split('-', 1)[0], context)]
+            ranked = ranked[:16]
+            if len(ranked) >= 6:
+                dynamic.append({'id': ident, 'title': theme.title, 'items': [items[value] for value in ranked]})
                 used.update(ranked)
-                dynamic_count += 1
-                if dynamic_count == MAX_DYNAMIC_SHELVES:
+                if len(dynamic) == MAX_DYNAMIC_SHELVES:
                     break
-        # Reserve a few seed-specific discoveries before For You consumes the pool.
-        # The rendered shelf order still puts For You first.
-        because_limit = min(12, max(0, (len(items) - len(used) - 12) // max(1, len(because_seeds))))
-        for seed in because_seeds:
-            ident = key(seed)
-            if ident not in vectors or because_limit < 4:
+        # Reserve seed-specific shelves before For You; render For You first.
+        for ident in plan['rankings']:
+            if not ident.startswith('because-'):
                 continue
-            available = set(items) - used
-            seed_similarities = similarities.against(vectors[ident])
-            seed_scores = {other: seed_similarities[other] + (0.05 if other in related.get(ident, set()) else 0) for other in available}
-            ranked = diverse_rank(available, seed_scores, vectors, because_limit)
-            if ranked:
-                seed_title = metadata[ident].get('title') or metadata[ident].get('name')
-                because_shelves.append({'id': 'because-' + ident, 'title': 'Because you watched ' + seed_title,
-                                        'items': [items[other] for other in ranked]})
+            ranked = [value for value in plan['rankings'][ident] if value in items and value not in used][:12]
+            if len(ranked) >= 4:
+                personal.append({'id': ident, 'title': plan['labels'][ident], 'items': [items[value] for value in ranked]})
                 used.update(ranked)
-        if interests:
-            available = set(items) - used
-            ranked = diverse_rank(available, scores, vectors, 24)
-            # Every sixth title explores another theme, ranked on quality + novelty.
-            exploration = {ident: 0.1 * ((items[ident].get('rating') or 0) / 10) - 0.15 * scores[ident] for ident in available}
-            explorers = diverse_rank(available - set(ranked), exploration, vectors, 4, ranked)
-            for offset, ident in zip((5, 11, 17, 23), explorers):
-                if offset < len(ranked):
-                    ranked[offset] = ident
-            if ranked:
-                shelves.append({'id': 'for-you', 'title': 'For You', 'items': [items[ident] for ident in ranked]})
-                used.update(ranked)
-        shelves.extend(because_shelves)
-        shelves.extend(dynamic_shelves)
-        next_hour = (local_now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)).astimezone(timezone.utc)
-        # UTC fallback also bounds expiry across a repeated DST hour.
+        ranked = [value for value in plan['rankings'].get('for-you', []) if value in items and value not in used][:24]
+        if ranked:
+            personal.insert(0, {'id': 'for-you', 'title': 'For You', 'items': [items[value] for value in ranked]})
+        now_ms = int(now.timestamp() * 1000)
+        next_hour = local.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
         valid_until = min(int(next_hour.timestamp() * 1000), now_ms + 3_600_000)
-        if valid_until <= now_ms:
-            valid_until = now_ms + 3_600_000
-        return {'model': MODEL, 'modelRevision': REVISION, 'shelves': shelves,
-                'eligibleKeys': eligible, 'evaluatedKeys': evaluated,
-                'publicReleaseDates': public_dates,
-                'completeEligibility': len(evaluated) == len(supplied), 'refreshedAt': now_ms,
-                'validUntil': valid_until,
-                'catalogReady': self.catalog is None or (self.catalog.ready and
-                    all(key(seed) in vectors for seed in seeds + negative_seeds)),
-                'modelVersion': self.model_version}
+        return {'model': plan.get('model', plan['modelVersion'].rsplit(':', 1)[0]), 'modelVersion': plan['modelVersion'],
+                'shelves': personal + dynamic, **state['evidence'], 'refreshedAt': now_ms,
+                'generatedAt': plan['generatedAt'], 'validUntil': max(now_ms + 1000, valid_until),
+                'catalogReady': state['ready']}
+
+    def discover(self, request, now=None):
+        validate(request)
+        prompt = request.get('prompt', '').strip()
+        if not prompt or len(prompt) > 500:
+            raise ValueError('Discovery prompt is required')
+        now = now or datetime.now(timezone.utc)
+        self.catalog.expand_prompt(prompt)
+        state = self._prepare(request, now)
+        if not state['ready']:
+            raise BlockingIOError('Public catalog is warming')
+        metadata, items = state['metadata'], state['items']
+        # Public word overlap expands the shortlist; only the LLM interprets and ranks.
+        terms = set(prompt.lower().split()) - {'movies', 'shows', 'that', 'would', 'like', 'something', 'for', 'the', 'and', 'me', 'i'}
+        targeted = sorted(items, key=lambda ident: (
+            -sum(term in text(metadata[ident]).lower() for term in terms), ident))[:120]
+        broad = self._shortlist(items, metadata, state['seeds'], 220, prompt)
+        keys = list(dict.fromkeys(targeted + broad))
+        if not keys:
+            raise BlockingIOError('Catalog has too few eligible titles')
+        pools, limits = {'results': keys}, {'results': 30}
+        self.home_cache.reserve('discover', now)
+        result = self.model.generate({'task': 'Interpret this prompt and select up to 30 genuinely fitting titles, ordered by theme and taste. '
+                                             'If it specifies movies, omit shows; if shows, omit movies. An empty array is allowed.',
+                                      'prompt': prompt, 'taste': self._taste(state),
+                                      'candidates': [self._description(ident, metadata) for ident in keys]},
+                                     self._schema(pools, limits))
+        ranked = self._validated(result, pools, limits)['results']
+        # No prompt response or raw prompt is written to disk or reused on another click.
+        return {'model': self.model.model, 'prompt': prompt, 'items': [items[ident] for ident in ranked]}

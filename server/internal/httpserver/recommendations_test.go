@@ -180,3 +180,66 @@ func TestRecommendationsLegacyClientsDefaultToUTC(t *testing.T) {
 		t.Fatalf("legacy client status = %d", response.Code)
 	}
 }
+
+func TestDiscoveryForwardsPromptAndAnonymousCacheTokenOnly(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/discover" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		var body recommendationRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Prompt != "silly movies for me" || body.CacheToken != "anonymous-cache-token" {
+			t.Errorf("missing discovery fields: %+v", body)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Error("client credentials were forwarded")
+		}
+		_, _ = w.Write([]byte(`{"prompt":"silly movies for me","items":[]}`))
+	}))
+	defer upstream.Close()
+	request := httptest.NewRequest(http.MethodPost, "/discover", strings.NewReader(`{"prompt":"silly movies for me","cacheToken":"anonymous-cache-token","profileId":"secret","apiKey":"secret"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+	New(Config{RecommendationsURL: upstream.URL}).Router().ServeHTTP(response, request)
+	if response.Code != 200 {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestDiscoveryRejectsMissingPromptInvalidTokensAndPreservesQuotaStatus(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(429) }))
+	defer upstream.Close()
+	router := New(Config{RecommendationsURL: upstream.URL}).Router()
+	for _, body := range []string{`{}`, `{"prompt":"   "}`, `{"prompt":"test","cacheToken":"../profile"}`, `{"prompt":"` + strings.Repeat("a", 501) + `"}`} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/discover", strings.NewReader(body)))
+		if response.Code != 400 {
+			t.Errorf("invalid body status = %d", response.Code)
+		}
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/discover", strings.NewReader(`{"prompt":"test"}`)))
+	if response.Code != 429 || response.Header().Get("Retry-After") == "" {
+		t.Fatalf("quota status = %d", response.Code)
+	}
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/discover", strings.NewReader(`{"prompt":"`+strings.Repeat("é", 500)+`"}`)))
+	if response.Code != 429 {
+		t.Fatalf("500 Unicode characters rejected: %d", response.Code)
+	}
+}
+
+func TestLiveDiscoveryGateDoesNotBlockCachedHome(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"shelves":[]}`)) }))
+	defer upstream.Close()
+	s := New(Config{RecommendationsURL: upstream.URL})
+	s.discoveryGate <- struct{}{}
+	defer func() { <-s.discoveryGate }()
+	response := httptest.NewRecorder()
+	s.Router().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/recommendations", strings.NewReader(`{}`)))
+	if response.Code != 200 {
+		t.Fatalf("cached Home status = %d", response.Code)
+	}
+}

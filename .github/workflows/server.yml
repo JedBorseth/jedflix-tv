@@ -44,7 +44,6 @@ jobs:
       - name: Test recommendation policy and ranking
         working-directory: server/recommender
         run: |
-          python3 -m pip install numpy==2.2.6
           python3 -m unittest discover -v
 
   build:
@@ -81,7 +80,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push dedicated GPU recommendation model service
+      - name: Build and push OpenRouter discovery and cache
         uses: docker/build-push-action@v6
         with:
           context: server
@@ -144,7 +143,7 @@ jobs:
             docker compose up -d --remove-orphans recommender api
             docker logout ghcr.io >/dev/null 2>&1 || true
             docker image prune -f >/dev/null
-            echo "== Waiting for API and real recommendation model to report healthy =="
+            echo "== Waiting for API and OpenRouter discovery to report healthy =="
             for i in $(seq 1 120); do
               health_status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-api 2>/dev/null || echo "missing")
               model_status=$(docker inspect -f '{{.State.Health.Status}}' jedflix-tv-recommender 2>/dev/null || echo "missing")

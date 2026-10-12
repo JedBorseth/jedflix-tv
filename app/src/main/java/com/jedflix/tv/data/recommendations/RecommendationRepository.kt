@@ -24,6 +24,7 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -61,7 +62,7 @@ data class CachedRecommendations(
 
     private val refreshTtl: Long get() = if (response.catalogReady) 6 * 60 * 60 * 1000L else 60_000L
     private val legacyModel: Boolean get() = response.model.startsWith("BAAI/bge-", ignoreCase = true) ||
-        response.model == "bge-small"
+        response.model == "bge-small" || response.model.startsWith("Qwen/", ignoreCase = true)
     fun verifiedKeys(now: Long): Set<String> =
         if (now - receivedAt in 0..EVIDENCE_TTL_MS) response.eligibleKeys.toSet() else emptySet()
     fun ineligibleKeys(now: Long): Set<String> =
@@ -84,6 +85,9 @@ class RecommendationRepository(
     private val cacheDirectory: File,
     private val fetch: suspend (RecommendationRequest) -> RecommendationResponse,
     private val now: () -> Long = System::currentTimeMillis,
+    private val fetchDiscovery: suspend (RecommendationRequest) -> DiscoveryResponse = {
+        throw IOException("Discovery unavailable")
+    },
 ) {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val locks = ConcurrentHashMap<Long, Mutex>()
@@ -93,7 +97,7 @@ class RecommendationRepository(
         retainedProfileIds = profileIds
         cacheDirectory.listFiles().orEmpty().forEach { entry ->
             val id = entry.name.removePrefix("profile-").removeSuffix(".tmp")
-                .removeSuffix(".json").toLongOrNull()
+                .removeSuffix(".json").removeSuffix(".key").toLongOrNull()
             if (id != null && id !in profileIds) entry.delete()
         }
     }
@@ -111,7 +115,12 @@ class RecommendationRepository(
                 if (previous != null && previous.signalFingerprint == fingerprint &&
                     previous.isFresh(now(), request.timeZone)) return@withLock previous
                 try {
-                    val response = fetch(request)
+                    val tokenFile = File(cacheDirectory, "profile-$profileId.key")
+                    cacheDirectory.mkdirs()
+                    val token = runCatching { tokenFile.readText().trim() }
+                        .getOrNull()?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{16,100}")) }
+                        ?: UUID.randomUUID().toString().also { tokenFile.writeText(it) }
+                    val response = fetch(request.copy(cacheToken = token, prompt = ""))
                     currentCoroutineContext().ensureActive()
                     if (retainedProfileIds?.contains(profileId) == false) return@withLock null
                     val receivedAt = now()
@@ -131,6 +140,14 @@ class RecommendationRepository(
             }
         }
 
+    /** A button/explicit submit makes one live request; never read or write the Home cache. */
+    suspend fun discover(request: RecommendationRequest, prompt: String): DiscoveryResponse =
+        withContext(Dispatchers.IO) {
+            val text = prompt.trim().take(500)
+            require(text.isNotEmpty())
+            fetchDiscovery(request.copy(prompt = text, cacheToken = ""))
+        }
+
     private fun read(profileId: Long): CachedRecommendations? = runCatching {
         json.decodeFromString(CachedRecommendations.serializer(), file(profileId).readText())
             .takeIf { it.profileId == profileId }
@@ -143,12 +160,11 @@ class RecommendationRepository(
             // Deliberately separate from TMDB/RD clients: no credentials leave the device.
             val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS).callTimeout(65, TimeUnit.SECONDS).build()
-            val endpoint = "${apiBaseUrl.trimEnd('/')}/recommendations"
-            return RecommendationRepository(cacheDirectory, fetch = { payload ->
+            suspend fun send(payload: RecommendationRequest, route: String): String {
                 val body = json.encodeToString(RecommendationRequest.serializer(), payload)
                     .toRequestBody("application/json".toMediaType())
-                suspendCancellableCoroutine { continuation ->
-                    val call = client.newCall(Request.Builder().url(endpoint).post(body).build())
+                return suspendCancellableCoroutine { continuation ->
+                    val call = client.newCall(Request.Builder().url("${apiBaseUrl.trimEnd('/')}/$route").post(body).build())
                     continuation.invokeOnCancellation { call.cancel() }
                     call.enqueue(object : Callback {
                         override fun onFailure(call: Call, error: IOException) {
@@ -157,8 +173,8 @@ class RecommendationRepository(
                         override fun onResponse(call: Call, response: Response) {
                             try {
                                 val decoded = response.use { result ->
-                                    check(result.isSuccessful) { "Recommendations unavailable: ${result.code}" }
-                                    json.decodeFromString(RecommendationResponse.serializer(), checkNotNull(result.body).string())
+                                    if (!result.isSuccessful) throw DiscoveryException(result.code)
+                                    checkNotNull(result.body).string()
                                 }
                                 continuation.resume(decoded)
                             } catch (error: Exception) {
@@ -167,7 +183,13 @@ class RecommendationRepository(
                         }
                     })
                 }
-            })
+            }
+            return RecommendationRepository(cacheDirectory,
+                fetch = { json.decodeFromString(RecommendationResponse.serializer(), send(it, "recommendations")) },
+                fetchDiscovery = { json.decodeFromString(DiscoveryResponse.serializer(), send(it, "discover")) },
+            )
         }
     }
 }
+
+class DiscoveryException(val status: Int) : IOException("Discovery unavailable: $status")

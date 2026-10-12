@@ -1,7 +1,7 @@
 """Calendar and factual eligibility for Home themes; no network or profile storage.
 
 Calendar decisions receive an aware datetime in the device's local timezone. The
-embedding scorer handles mood; this module handles facts that similarity cannot
+OpenRouter curator handles mood; this module handles facts that similarity cannot
 establish (holidays, runtime, credits, and complete limited series).
 """
 from collections import Counter

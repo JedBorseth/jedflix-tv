@@ -31,6 +31,7 @@ type Config struct {
 type Server struct {
 	cfg                Config
 	recommendationGate chan struct{}
+	discoveryGate      chan struct{}
 }
 
 // New builds a Server; call Router to get the http.Handler.
@@ -38,7 +39,7 @@ func New(cfg Config) *Server {
 	if cfg.Version == "" {
 		cfg.Version = "dev"
 	}
-	return &Server{cfg: cfg, recommendationGate: make(chan struct{}, 1)}
+	return &Server{cfg: cfg, recommendationGate: make(chan struct{}, 1), discoveryGate: make(chan struct{}, 1)}
 }
 
 // Router returns the fully wired http.Handler.
@@ -61,6 +62,7 @@ func (s *Server) Router() http.Handler {
 
 	r.Get("/health", s.handleHealth)
 	r.Post("/recommendations", s.handleRecommendations)
+	r.Post("/discover", s.handleDiscovery)
 	r.Get("/clips/{file}", s.handleClip)
 	r.Head("/clips/{file}", s.handleClip)
 
