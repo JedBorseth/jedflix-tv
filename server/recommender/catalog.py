@@ -126,7 +126,7 @@ class CatalogIndex:
             value = self.cache.get('content', _METADATA + ident)
             if not isinstance(value, dict) or not value.get('id'):
                 continue
-            self._metadata[ident] = value
+            self._metadata[ident] = self._slim(value)
         if self._metadata:
             self._version += 1
 
@@ -196,6 +196,17 @@ class CatalogIndex:
                   'number_of_seasons', 'number_of_episodes', 'type', 'status', 'last_episode_to_air',
                   'adult', 'original_language')
         slim = {name: value[name] for name in fields if name in value}
+        # Legacy metadata contains offers from every country. Only CA/US are
+        # used for eligibility; retaining all offers dominates the CPU heap.
+        if 'watch/providers' in slim:
+            offers = value['watch/providers'].get('results', {})
+            slim['watch/providers'] = {'results': {
+                region: offers[region] for region in ('CA', 'US') if region in offers}}
+        if 'release_dates' in slim:
+            slim['release_dates'] = {'results': [
+                {'release_dates': [{name: release[name] for name in ('type', 'release_date') if name in release}
+                                   for release in region.get('release_dates', [])]}
+                for region in value['release_dates'].get('results', [])]}
         credits = value.get('credits', {})
         slim['credits'] = {
             'cast': [{name: person[name] for name in ('id', 'name') if name in person}
@@ -203,7 +214,7 @@ class CatalogIndex:
             'crew': [{name: person[name] for name in ('id', 'name', 'job') if name in person}
                      for person in credits.get('crew', []) if person.get('job') == 'Director'],
         }
-        slim['_catalog_fetched_at'] = time.time()
+        slim['_catalog_fetched_at'] = value.get('_catalog_fetched_at', time.time())
         return slim
 
     def _people(self, metadata):

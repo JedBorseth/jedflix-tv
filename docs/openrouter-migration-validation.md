@@ -5,7 +5,7 @@ Validated on 2026-10-11 for app 0.9.0, using
 
 ## Automated checks
 
-- 63 Python tests cover persistent rankings, attempt budgets, concurrency,
+- 64 Python tests cover persistent rankings, attempt budgets, concurrency,
   failure cooldown, restart reuse, current exclusions, calendar changes,
   legacy-client upgrades, expiry, live discovery and free-provider guards.
 - Go tests and `go vet ./...` pass, including proxy endpoints and input bounds.
@@ -44,3 +44,11 @@ Valid stale Home plans remain usable for seven days after provider failures.
 The account reports 50 free requests per day. See the [initial evaluation](openrouter-nemotron-evaluation.md)
 for account details and provider terms. The CPU service replaces the TV GPU
 model; other Linux-server workloads are outside this migration.
+
+## Production smoke test
+
+The deployed API returned six Nemotron shelves with 104 titles to the emulator
+in 24.419 seconds. The recommender has no GPU device reservation; observed GPU
+memory fell from 5,406 MiB to 4,076 MiB. The previous worldwide offer metadata
+was trimmed on restore to Canada and US, with a regression test preserving
+release eligibility and original fetch timestamps.

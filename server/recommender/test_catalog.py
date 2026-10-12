@@ -67,6 +67,23 @@ class CatalogTests(unittest.TestCase):
         self.assertIn('movie-42', restored.snapshot())
         self.assertTrue(all(table == 'content' for table, _ in self.cache.values))
 
+    def test_legacy_worldwide_offers_are_trimmed_on_restore_without_losing_release_policy(self):
+        from engine import release_policy
+        from datetime import date
+        record = {'id': 42, 'release_date': '2026-10-01', '_catalog_fetched_at': 123,
+                  'watch/providers': {'results': {'CA': {'rent': [{'provider_id': 1}]},
+                       'US': {'flatrate': [{'provider_id': 2}]},
+                       'FR': {'flatrate': [{'provider_id': 3}]}}},
+                  'release_dates': {'results': [{'iso_3166_1': 'FR', 'release_dates': [
+                      {'type': 4, 'release_date': '2026-10-02', 'note': 'public release'}]}]}}
+        self.cache.put('content', 'catalog:v3:state', {'ids': ['movie-42']})
+        self.cache.put('content', 'catalog:v3:metadata:movie-42', record)
+        restored = CatalogIndex(self.tmdb, self.cache).snapshot()['movie-42']
+        self.assertEqual(set(restored['watch/providers']['results']), {'CA', 'US'})
+        self.assertEqual(restored['_catalog_fetched_at'], 123)
+        self.assertEqual(release_policy(restored, 'movie', date(2026, 10, 11)),
+                         release_policy(record, 'movie', date(2026, 10, 11)))
+
     def test_profile_references_take_priority_over_background_discovery(self):
         self.index.refresh_once()  # Trending puts public IDs in the queue.
         self.index.request({'tv-90': {'id': 90, 'mediaType': 'tv'}})
