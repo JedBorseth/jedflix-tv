@@ -166,4 +166,11 @@
     <string name="action_like">Like</string>
     <string name="action_liked">Liked</string>
     <string name="action_not_interested">Not interested</string>
+    <string name="migration_title">Jedflix has a new app</string>
+    <string name="migration_body">This old app is being replaced by the new Jedflix. Watch history, My List, and Real-Debrid settings are not copied to the new app yet.</string>
+    <string name="migration_move">Move to new Jedflix</string>
+    <string name="migration_retry">Try again</string>
+    <string name="migration_continue_old">Keep using old Jedflix for now</string>
+    <string name="migration_close">Close</string>
+    <string name="migration_downloading">Downloading the new Jedflix</string>
 </resources>
