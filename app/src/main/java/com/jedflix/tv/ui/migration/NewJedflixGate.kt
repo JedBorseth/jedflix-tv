@@ -32,6 +32,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jedflix.tv.R
 import com.jedflix.tv.data.migration.MigrationException
+import com.jedflix.tv.data.migration.NewJedflixInstallState
 import com.jedflix.tv.data.migration.NewJedflixMigrator
 import com.jedflix.tv.ui.theme.WarmWhite
 import com.jedflix.tv.ui.theme.Zinc400
@@ -59,6 +60,8 @@ fun NewJedflixGate(
     var verified by remember { mutableStateOf<File?>(null) }
     var waitingPermission by remember { mutableStateOf(false) }
     var installerOpened by remember { mutableStateOf(false) }
+    var installedState by remember { mutableStateOf(migrator.installedState()) }
+    val conflict = installedState == NewJedflixInstallState.CONFLICT
     val primaryFocus = remember { FocusRequester() }
 
     fun startInstall(file: File) {
@@ -70,6 +73,15 @@ fun NewJedflixGate(
     fun move() {
         if (busy) return
         failed = false
+        installedState = migrator.installedState()
+        if (installedState == NewJedflixInstallState.CONFLICT) {
+            context.startActivity(migrator.conflictSettingsIntent())
+            return
+        }
+        if (installedState == NewJedflixInstallState.JEDFLIX) {
+            onInstalled()
+            return
+        }
         if (!migrator.canInstall()) {
             waitingPermission = true
             status = "Allow Jedflix to install apps, then return here."
@@ -103,8 +115,19 @@ fun NewJedflixGate(
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (migrator.isInstalled()) {
+        val previousState = installedState
+        installedState = migrator.installedState()
+        if (installedState == NewJedflixInstallState.JEDFLIX) {
             onInstalled()
+            return@LifecycleEventEffect
+        }
+        if (previousState != installedState) {
+            status = ""
+            failed = false
+        }
+        if (installedState == NewJedflixInstallState.CONFLICT) {
+            waitingPermission = false
+            installerOpened = false
             return@LifecycleEventEffect
         }
         if (waitingPermission && migrator.canInstall()) {
@@ -127,14 +150,14 @@ fun NewJedflixGate(
     ) {
         Column(modifier = Modifier.widthIn(max = 720.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = stringResource(R.string.migration_title),
+                text = stringResource(if (conflict) R.string.migration_conflict_title else R.string.migration_title),
                 style = MaterialTheme.typography.headlineMedium,
                 color = WarmWhite,
                 fontWeight = FontWeight.Black,
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = stringResource(R.string.migration_body),
+                text = stringResource(if (conflict) R.string.migration_conflict_body else R.string.migration_body),
                 style = MaterialTheme.typography.bodyLarge,
                 color = Zinc400,
             )
@@ -157,9 +180,13 @@ fun NewJedflixGate(
                     enabled = !busy,
                     modifier = Modifier.focusRequester(primaryFocus).testTag("migration-move"),
                 ) {
-                    Text(stringResource(if (failed) R.string.migration_retry else R.string.migration_move))
+                    Text(stringResource(when {
+                        conflict -> R.string.migration_conflict_settings
+                        failed -> R.string.migration_retry
+                        else -> R.string.migration_move
+                    }))
                 }
-                if (failed) {
+                if (failed || conflict) {
                     Button(onClick = onContinueOld, modifier = Modifier.testTag("migration-continue-old")) {
                         Text(stringResource(R.string.migration_continue_old))
                     }

@@ -6,7 +6,12 @@ Kotlin, Jetpack Compose for TV, Coil, Retrofit, Media3. Catalog from TMDB; playb
 
 ![Home catalog](docs/home.png)![Stream picker](docs/streams.png)
 
-**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.9.0)** · Leanback, API 24+ · sideload only (not on Play Store)
+**[Download APK](https://github.com/JedBorseth/jedflix-tv/releases/tag/v0.9.2)** · Leanback, API 24+ · sideload only (not on Play Store)
+
+Versions 0.9.1 and later move users to the
+[Stremio-based Jedflix app](https://github.com/JedBorseth/jedflix-tv-stremio).
+Version 0.9.2 fixes migration when stock Stremio is already installed. See
+[migration and recovery](docs/new-jedflix-migration.md).
 
 
 |          |                                                            |
@@ -36,9 +41,14 @@ For older TVs, select **Settings → Browse quality → Low**. It uses smaller i
 
 ## Install
 
-1. Get a [Real-Debrid](https://real-debrid.com) premium key.
-2. Install the APK (`adb install jedflix-tv-0.9.0.apk`, or copy onto the TV).
-3. Settings → paste the key, or **Enter from phone** and scan the QR.
+1. Install the latest legacy APK on the TV, preserving the old app's data.
+2. Open Jedflix and choose **Move to new Jedflix**. Confirm Android's installer.
+3. Configure Real-Debrid in the new app. History, My List and Real-Debrid settings
+   are not copied from the old app yet.
+
+If stock Stremio is installed, migration explains how to remove it in Android
+settings first. The new Jedflix uses the same package with a different signing
+key; both cannot be installed together. Removing Stremio deletes its local data.
 
 Later releases are offered in Settings (**Check for updates**, then **Download and install**). The app also checks GitHub once every 24 hours. Sideloaded updates only succeed when the new APK is signed with the same key as the installed build.
 

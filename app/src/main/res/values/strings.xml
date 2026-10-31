@@ -173,4 +173,7 @@
     <string name="migration_continue_old">Keep using old Jedflix for now</string>
     <string name="migration_close">Close</string>
     <string name="migration_downloading">Downloading the new Jedflix</string>
+    <string name="migration_conflict_title">Stremio is already installed</string>
+    <string name="migration_conflict_body">Stremio is using the app slot needed by the new Jedflix. Open its Android settings and uninstall Stremio, then return here to install Jedflix. Uninstalling removes Stremio’s local app data. You can also keep using old Jedflix for now.</string>
+    <string name="migration_conflict_settings">Open Stremio settings</string>
 </resources>

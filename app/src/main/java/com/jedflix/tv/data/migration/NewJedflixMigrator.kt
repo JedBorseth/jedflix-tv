@@ -19,6 +19,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+enum class NewJedflixInstallState { ABSENT, JEDFLIX, CONFLICT }
+
 /**
  * Moves this install to the new Jedflix app. The new app is a separate package, so it is
  * installed alongside this one; Android asks the user to confirm. Every file is checked
@@ -33,14 +35,31 @@ class NewJedflixMigrator(private val context: Context) {
         .build()
     private val updates = File(context.cacheDir, "updates")
 
-    fun isInstalled(): Boolean = try {
-        context.packageManager.getPackageInfo(NewJedflix.PACKAGE, 0)
-        true
-    } catch (_: PackageManager.NameNotFoundException) {
-        false
+    fun installedState(): NewJedflixInstallState {
+        val info = try {
+            context.packageManager.getPackageInfo(NewJedflix.PACKAGE, signingFlags())
+        } catch (_: PackageManager.NameNotFoundException) {
+            return NewJedflixInstallState.ABSENT
+        }
+        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+        return if (code >= NewJedflix.MIN_VERSION_CODE && hasJedflixSignature(info)) {
+            NewJedflixInstallState.JEDFLIX
+        } else {
+            NewJedflixInstallState.CONFLICT
+        }
     }
 
-    fun launchIntent(): Intent? = context.packageManager.getLaunchIntentForPackage(NewJedflix.PACKAGE)
+    fun isInstalled(): Boolean = installedState() == NewJedflixInstallState.JEDFLIX
+
+    fun launchIntent(): Intent? = if (isInstalled()) {
+        context.packageManager.getLaunchIntentForPackage(NewJedflix.PACKAGE)
+    } else {
+        null
+    }
+
+    fun conflictSettingsIntent(): Intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${NewJedflix.PACKAGE}"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun canInstall(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
@@ -109,24 +128,14 @@ class NewJedflixMigrator(private val context: Context) {
     }
 
     private fun verifyPackage(file: File, artifact: NewJedflixArtifact) {
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
-        } else {
-            @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
-        }
-        val info: PackageInfo = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
+        val info: PackageInfo = context.packageManager.getPackageArchiveInfo(file.absolutePath, signingFlags())
             ?: throw MigrationException("The downloaded update is not a valid app.")
         if (info.packageName != NewJedflix.PACKAGE) throw MigrationException("The downloaded update is for a different app.")
         val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
         if (code != artifact.versionCode || info.versionName != artifact.versionName) {
             throw MigrationException("The downloaded update does not match its release.")
         }
-        val signers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners.orEmpty()
-        } else {
-            @Suppress("DEPRECATION") info.signatures.orEmpty()
-        }
-        if (signers.isEmpty() || signers.any { sha256Hex(it.toByteArray()) != NewJedflix.SIGNING_CERT_SHA256 }) {
+        if (!hasJedflixSignature(info)) {
             throw MigrationException("The new Jedflix is signed by an unexpected key.")
         }
         ZipFile(file).use { zip ->
@@ -135,6 +144,21 @@ class NewJedflixMigrator(private val context: Context) {
             }
             if (!native) throw MigrationException("The new Jedflix does not support this TV's processor.")
         }
+    }
+
+    private fun signingFlags(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        PackageManager.GET_SIGNING_CERTIFICATES
+    } else {
+        @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+    }
+
+    private fun hasJedflixSignature(info: PackageInfo): Boolean {
+        val signers = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners.orEmpty()
+        } else {
+            @Suppress("DEPRECATION") info.signatures.orEmpty()
+        }
+        return signers.isNotEmpty() && signers.all { sha256Hex(it.toByteArray()) == NewJedflix.SIGNING_CERT_SHA256 }
     }
 
     private fun get(url: String): String {
