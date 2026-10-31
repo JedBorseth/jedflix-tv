@@ -4,6 +4,8 @@ import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -26,7 +28,18 @@ class NewJedflixDownloadTest {
         println("Verified Jedflix ${artifact.versionName} for ${artifact.abi}")
         if (action == "install") {
             assertTrue("Allow this legacy app to install apps in Android settings first", migrator.canInstall())
+            val previousUpdate = runCatching {
+                context.packageManager.getPackageInfo(NewJedflix.PACKAGE, 0).lastUpdateTime
+            }.getOrDefault(0L)
             migrator.install(file)
+            // Keep the source process alive while Android reads its private URI,
+            // and prove the installer completed instead of merely opening it.
+            withTimeout(120_000) {
+                while (runCatching {
+                    context.packageManager.getPackageInfo(NewJedflix.PACKAGE, 0).lastUpdateTime
+                }.getOrDefault(0L) <= previousUpdate) delay(250)
+            }
+            assertEquals(NewJedflixInstallState.JEDFLIX, migrator.installedState())
         }
     }
 }
