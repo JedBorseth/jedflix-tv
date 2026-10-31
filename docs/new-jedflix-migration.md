@@ -55,3 +55,20 @@ a foreign-signed APK using the new ID and asserts the conflict screen.
 The identity test uses the real Android package manager. The UI check starts the
 legacy launcher and asserts its destination. `--ui-only` checks an optimized
 release APK after installation. The verifier never uninstalls apps or clears data.
+
+To check the actual published manifest and download on a TV, install the debug app
+and its test APK, then opt into the live network test:
+
+```bash
+JEDFLIX_DEVICE_HOST=local /path/to/jedflix-tv-stremio/scripts/adb.sh -s DEVICE \
+  shell am instrument -w \
+  -e class com.jedflix.tv.data.migration.NewJedflixDownloadTest \
+  -e migrationDownload verify \
+  com.jedflix.tv.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+This uses the production migration client, including its ABI, APK, certificate,
+checksum, and size checks. `migrationDownload install` also opens the normal
+Android installer after verification; allow the legacy app to install apps in
+Android settings first. It can reinstall the same signed version over an existing
+Jedflix without removing the app or clearing settings.
