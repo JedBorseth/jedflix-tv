@@ -10,6 +10,7 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
+        <package android:name="com.jedflix.stremio" />
         <package android:name="com.stremio.one" />
     </queries>
 

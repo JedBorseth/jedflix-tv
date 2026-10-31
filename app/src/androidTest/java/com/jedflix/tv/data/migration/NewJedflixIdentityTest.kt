@@ -9,19 +9,22 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Run on a disposable emulator with identityFixture=stock, absent, or jedflix. */
+/** Run on a disposable emulator with identityFixture=stock, absent, foreign, or jedflix. */
 @RunWith(AndroidJUnit4::class)
 class NewJedflixIdentityTest {
     @Test
     fun onlyTheSignedJedflixInstallCanBeOpened() {
         val fixture = InstrumentationRegistry.getArguments().getString("identityFixture")
-        assumeTrue("Requires an explicit installed-app fixture", fixture in setOf("stock", "absent", "jedflix"))
+        assumeTrue("Requires an explicit installed-app fixture", fixture in setOf("stock", "absent", "foreign", "jedflix"))
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val present = context.packageManager.getInstalledPackages(0).any { it.packageName == NewJedflix.PACKAGE }
-        assertEquals("Fixture package presence", fixture != "absent", present)
+        assertEquals("Fixture package presence", fixture in setOf("foreign", "jedflix"), present)
+        if (fixture == "stock") {
+            assertNotNull(context.packageManager.getPackageInfo("com.stremio.one", 0))
+        }
         val migrator = NewJedflixMigrator(context)
         val expectedState = when (fixture) {
-            "absent" -> NewJedflixInstallState.ABSENT
+            "absent", "stock" -> NewJedflixInstallState.ABSENT
             "jedflix" -> NewJedflixInstallState.JEDFLIX
             else -> NewJedflixInstallState.CONFLICT
         }

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /** The Stremio-based Jedflix app that legacy com.jedflix.tv users move to. */
 object NewJedflix {
-    const val PACKAGE = "com.stremio.one"
+    const val PACKAGE = "com.jedflix.stremio"
     const val REPOSITORY = "JedBorseth/jedflix-tv-stremio"
     const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPOSITORY/releases/latest"
     const val RELEASE_DOWNLOADS = "https://github.com/$REPOSITORY/releases/download/"
@@ -18,8 +18,8 @@ object NewJedflix {
     /** Every Jedflix APK is signed with this certificate. Changing it breaks the migration. */
     const val SIGNING_CERT_SHA256 = "64a76fdcb17b35f8eabea37f00c0d03f04ccd49404260bbc62334061f7d3eb97"
 
-    /** Lowest versionCode of any Jedflix build. Upstream Stremio 1.10.4 is 34194308 and below. */
-    const val MIN_VERSION_CODE = 34194309L
+    /** First release with the separate Jedflix application ID. */
+    const val MIN_VERSION_CODE = 34194312L
 }
 
 class MigrationException(message: String) : Exception(message)
@@ -46,9 +46,9 @@ object NewJedflixRelease {
         ) throw MigrationException("The new Jedflix has no stable release yet.")
         val tag = release.string("tag_name")
         if (!TAG.matches(tag)) throw MigrationException("The new Jedflix release has an unexpected tag.")
-        val expected = NewJedflix.RELEASE_DOWNLOADS + tag + "/jedflix-update.json"
+        val expected = NewJedflix.RELEASE_DOWNLOADS + tag + "/jedflix-app-update.json"
         val assets = release["assets"]?.jsonArray.orEmpty().map { it.asObject() }
-        val manifest = assets.firstOrNull { it.string("name") == "jedflix-update.json" }
+        val manifest = assets.firstOrNull { it.string("name") == "jedflix-app-update.json" }
             ?: throw MigrationException("The new Jedflix release has no update manifest.")
         if (manifest.string("browser_download_url") != expected) {
             throw MigrationException("The new Jedflix release has an unexpected manifest address.")
@@ -85,7 +85,7 @@ object NewJedflixManifest {
         val url = entry.string("url")
         val sha256 = entry.string("sha256")
         val size = entry.long("size")
-        if (url != NewJedflix.RELEASE_DOWNLOADS + tag + "/jedflix-$version-$abi.apk") {
+        if (url != NewJedflix.RELEASE_DOWNLOADS + tag + "/jedflix-app-$version-$abi.apk") {
             throw MigrationException("The new Jedflix file address is not expected.")
         }
         if (!SHA256.matches(sha256) || size <= 0 || size > MAX_SIZE) {
