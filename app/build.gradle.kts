@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.android.application)
@@ -36,8 +37,8 @@ android {
         applicationId = "com.jedflix.tv"
         minSdk = 24
         targetSdk = 36
-        versionCode = 26
-        versionName = "0.9.3"
+        versionCode = 27
+        versionName = "0.9.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
@@ -98,6 +99,16 @@ configurations.configureEach {
         force("androidx.media3:media3-container:${libs.versions.media3.get()}")
         force("androidx.media3:media3-database:${libs.versions.media3.get()}")
         force("androidx.media3:media3-datasource:${libs.versions.media3.get()}")
+    }
+}
+
+// The opt-in release gate must rerun when the real manifest changes, even when
+// app/test sources are unchanged and Gradle's test outputs are cached.
+val migrationReleaseManifest = providers.environmentVariable("JEDFLIX_RELEASE_MANIFEST")
+tasks.withType<Test>().configureEach {
+    if (migrationReleaseManifest.isPresent) {
+        inputs.file(migrationReleaseManifest).withPropertyName("migrationReleaseManifest")
+        environment("JEDFLIX_RELEASE_MANIFEST", migrationReleaseManifest.get())
     }
 }
 

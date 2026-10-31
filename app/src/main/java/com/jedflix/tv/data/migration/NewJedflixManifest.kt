@@ -80,7 +80,11 @@ object NewJedflixManifest {
         if (root.int("minSdk") > sdk) throw MigrationException("The new Jedflix needs a newer Android version.")
         val artifacts = root["artifacts"]?.asObject() ?: throw MigrationException("The new Jedflix manifest has no files.")
         val abi = abis.firstOrNull { artifacts.containsKey(it) }
-            ?: throw MigrationException("The new Jedflix has no build for this TV's processor.")
+            ?: throw MigrationException(
+                "Jedflix $version has no matching download for this TV.\n" +
+                    "TV: ${abis.joinToString().ifEmpty { "unknown" }}. " +
+                    "Available: ${artifacts.keys.sorted().joinToString().ifEmpty { "none" }}.",
+            )
         val entry = artifacts.getValue(abi).asObject()
         val url = entry.string("url")
         val sha256 = entry.string("sha256")

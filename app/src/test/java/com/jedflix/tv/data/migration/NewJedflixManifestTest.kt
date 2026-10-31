@@ -1,8 +1,13 @@
 package com.jedflix.tv.data.migration
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assume.assumeNotNull
 import org.junit.Test
+import java.io.File
 
 class NewJedflixManifestTest {
     private val sha = "ab8dd6ca4a5e10d317c3a112d87d5b64fd7b5c40bd1be28de22651e66d94816b"
@@ -41,6 +46,24 @@ class NewJedflixManifestTest {
     }
 
     @Test
+    fun accepts32BitArmAndroid() {
+        val text = manifest(abi = "armeabi-v7a", url = "$base/jedflix-app-1.0.3-armeabi-v7a.apk")
+        assertEquals("armeabi-v7a", NewJedflixManifest.parse(text, "v1.0.3", arrayOf("armeabi-v7a", "armeabi"), 24).abi)
+    }
+
+    /** Release gate: exercise the same parser as the migration screen on real metadata. */
+    @Test
+    fun releaseManifestSupportsBothArmAndroidVariants() {
+        val path = System.getenv("JEDFLIX_RELEASE_MANIFEST")
+        assumeNotNull(path)
+        val text = File(path!!).readText()
+        val version = Json.parseToJsonElement(text).jsonObject.getValue("versionName").jsonPrimitive.content
+        for (abi in arrayOf("arm64-v8a", "armeabi-v7a")) {
+            assertEquals(abi, NewJedflixManifest.parse(text, "v$version", arrayOf(abi), 24).abi)
+        }
+    }
+
+    @Test
     fun rejectsAnotherApp() {
         assertThrows(MigrationException::class.java) {
             NewJedflixManifest.parse(manifest(packageName = "com.jedflix.tv"), "v1.0.3", arrayOf("arm64-v8a"), 36)
@@ -70,9 +93,13 @@ class NewJedflixManifestTest {
 
     @Test
     fun rejectsProcessorWithoutBuild() {
-        assertThrows(MigrationException::class.java) {
+        val error = assertThrows(MigrationException::class.java) {
             NewJedflixManifest.parse(manifest(), "v1.0.3", arrayOf("armeabi-v7a"), 36)
         }
+        assertEquals(
+            "Jedflix 1.0.3 has no matching download for this TV.\nTV: armeabi-v7a. Available: arm64-v8a.",
+            error.message,
+        )
     }
 
     @Test
